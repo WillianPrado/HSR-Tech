@@ -9,17 +9,21 @@ import datetime
 from core.status_tracker import set_status
 
 logger = logging.getLogger(__name__)
+
 # Interface para tracking de status
 class StatusTracker(ABC):
     @abstractmethod
     async def update(self, zip_id: str, message: str, progress: float):
         pass
 
+
 class DatabaseStatusTracker(StatusTracker):
     async def update(self, zip_id: str, message: str, progress: float):
         await set_status(zip_id, message, progress)
 
+
 def carregar_arquivo(caminho):
+    """Função síncrona de leitura — será executada via asyncio.to_thread"""
     try:
         with open(caminho, 'r', encoding='utf-8') as file:
             return file.read()
@@ -27,8 +31,10 @@ def carregar_arquivo(caminho):
         print(f"❌ Erro ao ler '{caminho}': {e}")
         return None
 
+
 def combinar_prompt_conversa(prompt, conversa):
     return f"{prompt}\n\nTRANSCRIÇÃO DA CONVERSA:\n{conversa}"
+
 
 async def processar_conversa_para_pdf(
     prompt_path: Path,
@@ -59,6 +65,7 @@ async def processar_conversa_para_pdf(
             error_msg = f"{descricao} não encontrado: {path}"
             return error_msg
         return None
+
     try:
         # Validação dos arquivos
         prompt_error = validar_arquivo(prompt_path, "Arquivo de prompt")
@@ -71,9 +78,9 @@ async def processar_conversa_para_pdf(
             await update_status(chat_error, 0)
             raise FileNotFoundError(chat_error)
 
-        # Carrega os conteúdos dos arquivos
-        prompt = carregar_arquivo(prompt_path)
-        conversa = carregar_arquivo(chat_path)
+        # 🔄 Carrega os conteúdos dos arquivos de forma assíncrona
+        prompt = await asyncio.to_thread(carregar_arquivo, prompt_path)
+        conversa = await asyncio.to_thread(carregar_arquivo, chat_path)
 
         # Verifica se o conteúdo dos arquivos está correto
         if not prompt or not conversa:
@@ -85,9 +92,9 @@ async def processar_conversa_para_pdf(
         await update_status("Preparando análise...", 0.62)
         mensagem_completa = combinar_prompt_conversa(prompt, conversa)
 
-        # Realiza a análise via IA
+        # Realiza a análise via IA (executada em thread para não travar o loop)
         await update_status("IA analisando negociação ... (pode demorar 5 minutos)", 0.66)
-        resposta = enviar_mensagem_para_deepseek(mensagem_completa)
+        resposta = await asyncio.to_thread(enviar_mensagem_para_deepseek, mensagem_completa)
 
         if not resposta:
             error_msg = "Resposta da IA vazia"
@@ -97,7 +104,7 @@ async def processar_conversa_para_pdf(
         # Preparação do diretório de saída para o PDF
         output_pdf.parent.mkdir(parents=True, exist_ok=True)
 
-        # Geração do relatório
+        # Geração do relatório (já está não bloqueante)
         await update_status("Gerando relatório...", 0.7)
         await asyncio.to_thread(salvar_markdown_em_pdf_visual, resposta, output_pdf)
 
@@ -108,22 +115,22 @@ async def processar_conversa_para_pdf(
         error_msg = f"Erro de arquivo: {str(e)}"
         await update_status(error_msg, 0)
         logger.error(error_msg)
-        raise  # Levanta a exceção para ser tratada mais acima, caso necessário
+        raise
 
     except ValueError as e:
         error_msg = f"Erro de valor: {str(e)}"
         await update_status(error_msg, 0)
         logger.error(error_msg)
-        raise  # Levanta a exceção para ser tratada mais acima, caso necessário
+        raise
 
     except RuntimeError as e:
         error_msg = f"Erro de execução: {str(e)}"
         await update_status(error_msg, 0)
         logger.error(error_msg)
-        raise  # Levanta a exceção para ser tratada mais acima, caso necessário
+        raise
 
     except Exception as e:
         error_msg = f"Falha no processamento: {str(e)}"
         await update_status(error_msg, 0)
         logger.error(error_msg)
-        raise  # Levanta a exceção para ser tratada mais acima, caso necessário
+        raise

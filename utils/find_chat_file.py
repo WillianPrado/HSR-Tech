@@ -6,6 +6,9 @@ import re
 import logging
 from functools import lru_cache
 
+# ✅ Import da nova função assíncrona
+from .async_file_utils import async_file_scanner_is_chat_file
+
 logger = logging.getLogger(__name__)
 
 class ChatPatternStrategy(ABC):
@@ -60,7 +63,7 @@ class ChatFileScanner:
         self.patterns = pattern_strategy.get_patterns()
     
     def find_chat_file(self, files: Iterable[Path]) -> Optional[Path]:
-        """Encontra o arquivo de chat com tratamento robusto de erros"""
+        """Versão síncrona original - mantida para compatibilidade"""
         for file in files:
             try:
                 if file.name == "_chat.txt" or (len(files) == 1 and file.name.__contains__(".txt")) or self._is_chat_file(file):
@@ -71,12 +74,34 @@ class ChatFileScanner:
                 continue
         return None
     
+    async def find_chat_file_async(self, files: Iterable[Path]) -> Optional[Path]:
+        """✅ NOVA versão assíncrona do método"""
+        for file in files:
+            try:
+                # Mantém as regras de fallback rápidas
+                if file.name == "_chat.txt" or (len(files) == 1 and ".txt" in file.name):
+                    logger.info(f"Arquivo de chat identificado por nome: {file.name}")
+                    return file
+                
+                # ✅ Usa a versão assíncrona para análise de conteúdo
+                if await async_file_scanner_is_chat_file(file, self.patterns):
+                    logger.info(f"Arquivo de chat identificado por padrão: {file.name}")
+                    return file
+                    
+            except Exception as e:
+                logger.warning(f"Erro ao processar {file.name} assincronamente: {str(e)}")
+                continue
+        return None
+    
     def _is_chat_file(self, file: Path) -> bool:
-        """Verifica se um arquivo contém padrões de chat"""
-        with open(file, 'r', encoding='utf-8', errors='ignore') as f:
-            for line in f:
-                if any(pattern.search(line) for pattern in self.patterns):
-                    return True
+        """Versão síncrona original - mantida para compatibilidade"""
+        try:
+            with open(file, 'r', encoding='utf-8', errors='ignore') as f:
+                for line in f:
+                    if any(pattern.search(line) for pattern in self.patterns):
+                        return True
+        except Exception as e:
+            logger.warning(f"Erro na leitura síncrona de {file}: {str(e)}")
         return False
 
 class ChatFileFinder:
@@ -93,7 +118,7 @@ class ChatFileFinder:
         self.file_scanner = file_scanner or ChatFileScanner(self.pattern_strategy)
     
     def find_chat_file(self, files: List[Path]) -> Optional[Path]:
-        """Interface principal para encontrar arquivo de chat"""
+        """Interface principal síncrona - mantida para compatibilidade"""
         if not files:
             logger.warning("Lista de arquivos vazia recebida")
             return None
@@ -104,6 +129,19 @@ class ChatFileFinder:
             return None
         
         return self.file_scanner.find_chat_file(valid_files)
+    
+    async def find_chat_file_async(self, files: List[Path]) -> Optional[Path]:
+        """✅ NOVA interface assíncrona para melhor performance"""
+        if not files:
+            logger.warning("Lista de arquivos vazia recebida")
+            return None
+        
+        valid_files = self.file_filter.filter_valid_files(files)
+        if not valid_files:
+            logger.warning("Nenhum arquivo de texto válido encontrado")
+            return None
+        
+        return await self.file_scanner.find_chat_file_async(valid_files)
 
 class ChatFileFinderBuilder:
     """Builder para configuração flexível do ChatFileFinder"""

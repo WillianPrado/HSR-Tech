@@ -1,57 +1,47 @@
-# backend/services/zip/zip_extractor.py
+# backend/services/zip/zip_extractor.py - VERSÃO CORRIGIDA
 from abc import ABC, abstractmethod
 from pathlib import Path
 import zipfile
 import asyncio
 from typing import List
 import logging
-import os
+import aiofiles
+import io
 
 logger = logging.getLogger(__name__)
 
 class ExtractionStrategy(ABC):
-    """Abstract base class for extraction strategies"""
     @abstractmethod
     async def extract(self, zip_path: Path, output_dir: Path) -> List[Path]:
-        """Extract zip contents to output directory"""
         pass
 
-class DefaultZipExtractor(ExtractionStrategy):
-    """Default ZIP extraction implementation"""
+class TrueAsyncZipExtractorStrategy(ExtractionStrategy):
+    """Estratégia verdadeiramente assíncrona usando threads para operações bloqueantes"""
     
     async def extract(self, zip_path: Path, output_dir: Path) -> List[Path]:
-        """
-        Extract all files from ZIP archive while preserving full directory structure
-        Returns list of absolute paths to all extracted files
-        """
+        """Extrai ZIP de forma não-bloqueante usando threads"""
+        return await asyncio.to_thread(self._extract_sync, zip_path, output_dir)
+    
+    def _extract_sync(self, zip_path: Path, output_dir: Path) -> List[Path]:
+        """Versão síncrona executada em thread separada"""
+        extracted_files = []
+        output_dir.mkdir(parents=True, exist_ok=True)
+        
         try:
-            extracted_files = []
-            
-            # Cria diretório de extração se não existir
-            output_dir.mkdir(parents=True, exist_ok=True)
-            
             with zipfile.ZipFile(zip_path, 'r') as zip_ref:
-                # Extrai mantendo toda a estrutura de diretórios
+                # Extrai tudo de uma vez (mais eficiente)
                 zip_ref.extractall(output_dir)
                 
-                # Obtém todos os arquivos extraídos (ignorando diretórios)
+                # Coleta paths dos arquivos extraídos
                 for zip_info in zip_ref.infolist():
                     if not zip_info.is_dir():
-                        # Constrói o caminho completo normalizado
                         extracted_path = (output_dir / zip_info.filename).resolve()
-                        
-                        # Verifica se o arquivo realmente existe
-                        if not extracted_path.exists():
-                            logger.warning(f"Arquivo extraído não encontrado no local esperado: {extracted_path}")
-                            continue
-                            
-                        extracted_files.append(extracted_path)
-                
-                logger.info(f"Extraídos {len(extracted_files)} arquivos de {zip_path.name}")
-                logger.debug(f"Arquivos extraídos: {extracted_files}")
-                
-                return extracted_files
-                
+                        if extracted_path.exists():
+                            extracted_files.append(extracted_path)
+            
+            logger.info(f"Extraídos {len(extracted_files)} arquivos de {zip_path.name}")
+            return extracted_files
+            
         except zipfile.BadZipFile as e:
             logger.error(f"ZIP inválido: {zip_path.name} - {str(e)}")
             raise ValueError(f"ZIP inválido: {zip_path.name}") from e
@@ -59,37 +49,61 @@ class DefaultZipExtractor(ExtractionStrategy):
             logger.error(f"Erro ao extrair {zip_path.name}: {str(e)}")
             raise
 
-class AsyncZipExtractor:
-    """Main extractor class following Dependency Inversion Principle"""
-    
-    def __init__(self, strategy: ExtractionStrategy = None):
-        self.strategy = strategy or DefaultZipExtractor()
+class AsyncZipExtractorStrategy(ExtractionStrategy):
+    """Estratégia alternativa - processamento arquivo por arquivo"""
     
     async def extract(self, zip_path: Path, output_dir: Path) -> List[Path]:
-        """
-        Public interface for async extraction
-        Returns list of absolute paths to all extracted files
-        """
-        self._validate_paths(zip_path, output_dir)
+        """Extrai cada arquivo individualmente de forma assíncrona"""
+        extracted_files = []
         
-        # Extrai os arquivos
+        # Abre o ZIP uma vez e processa cada arquivo
+        def get_zip_contents():
+            with zipfile.ZipFile(zip_path, 'r') as zip_ref:
+                return [
+                    (zip_info, zip_ref.open(zip_info).read())
+                    for zip_info in zip_ref.infolist()
+                    if not zip_info.is_dir()
+                ]
+        
+        # Executa a leitura do ZIP em thread
+        zip_contents = await asyncio.to_thread(get_zip_contents)
+        
+        # Escreve cada arquivo de forma assíncrona
+        for zip_info, content in zip_contents:
+            full_path = output_dir / zip_info.filename
+            full_path.parent.mkdir(parents=True, exist_ok=True)
+            
+            async with aiofiles.open(full_path, 'wb') as target_file:
+                await target_file.write(content)
+            
+            extracted_files.append(full_path)
+        
+        logger.info(f"Extraídos {len(extracted_files)} arquivos de {zip_path.name}")
+        return extracted_files
+
+class AsyncZipExtractor:
+    """Main extractor - usa estratégia otimizada por padrão"""
+    
+    def __init__(self, strategy: ExtractionStrategy = None):
+        # ✅ Usa estratégia que move TODO o processamento para thread
+        self.strategy = strategy or TrueAsyncZipExtractorStrategy()
+    
+    async def extract(self, zip_path: Path, output_dir: Path) -> List[Path]:
+        self._validate_paths(zip_path, output_dir)
         extracted_files = await self.strategy.extract(zip_path, output_dir)
         
-        # Filtra apenas arquivos de áudio (opcional)
+        # Filtra arquivos relevantes (mantenha sua lógica)
         audio_files = [
             f for f in extracted_files 
             if f.suffix.lower() in ('.opus', '.mp3', '.wav', '.ogg', '.m4a', '.txt')
         ]
         
-        logger.info(f"Arquivos de áudio extraídos: {len(audio_files)}/{len(extracted_files)}")
-        return audio_files  # Ou retorne todos os arquivos se preferir
+        logger.info(f"Arquivos de processamento: {len(audio_files)}/{len(extracted_files)}")
+        return audio_files
     
     def _validate_paths(self, zip_path: Path, output_dir: Path) -> None:
-        """Validate input paths before processing"""
         if not zip_path.exists():
             raise FileNotFoundError(f"Arquivo ZIP não encontrado: {zip_path}")
         if not zip_path.is_file():
             raise ValueError(f"Caminho não é um arquivo: {zip_path}")
-        
-        # Cria o diretório de saída se não existir
         output_dir.mkdir(parents=True, exist_ok=True)
