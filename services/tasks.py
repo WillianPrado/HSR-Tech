@@ -3,7 +3,7 @@ from pathlib import Path
 from services.zip.zip_extractor import AsyncZipExtractor
 from services.chat.chat_file_handler import ChatProcessor
 from services.audio.openai_transcriber import OpenAITranscriber
-from services.reports.coach_analyzer import processar_conversa_para_pdf
+from services.reports.coach_analyzer import process_conversation_to_pdf
 from utils.find_chat_file import create_chat_finder, ChatFileFinder  # Import corrigido
 from utils.file_cleaner import clean_extracted_files
 import os
@@ -175,7 +175,7 @@ class ZipProcessingPipeline:
         output_pdf = output_dir / f"analise_{filename}.pdf"
         
         try:
-            await processar_conversa_para_pdf(
+            await process_conversation_to_pdf(
                 prompt_path,
                 chat_file,
                 output_pdf,

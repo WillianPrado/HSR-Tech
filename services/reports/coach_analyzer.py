@@ -1,42 +1,61 @@
-from abc import ABC, abstractmethod
 import asyncio
+import logging
+from abc import ABC, abstractmethod
 from typing import Optional
 from anyio import Path
-import logging
+from datetime import datetime
+
 from services.reports.deepseek_client import enviar_mensagem_para_deepseek
-from services.reports.pdf_utils import salvar_texto_em_pdf_simples, salvar_markdown_em_pdf_visual
-import datetime
+from services.reports.pdf_utils import salvar_markdown_em_pdf_visual
 from core.status_tracker import set_status
 
 logger = logging.getLogger(__name__)
 
-# Interface para tracking de status
+
+# ======================================================================
+# Abstract Interface for Tracking Progress
+# ======================================================================
+
 class StatusTracker(ABC):
+    """Abstract interface for tracking process status."""
+    
     @abstractmethod
     async def update(self, zip_id: str, message: str, progress: float):
+        """Update the process status."""
         pass
 
 
 class DatabaseStatusTracker(StatusTracker):
+    """Tracks process status in the database."""
+    
     async def update(self, zip_id: str, message: str, progress: float):
         await set_status(zip_id, message, progress)
 
 
-def carregar_arquivo(caminho):
-    """Função síncrona de leitura — será executada via asyncio.to_thread"""
+# ======================================================================
+# File Utilities
+# ======================================================================
+
+def load_file_sync(path: Path) -> Optional[str]:
+    """Synchronously reads a file (wrapped later in asyncio.to_thread)."""
     try:
-        with open(caminho, 'r', encoding='utf-8') as file:
+        with open(path, 'r', encoding='utf-8') as file:
             return file.read()
     except Exception as e:
-        print(f"❌ Erro ao ler '{caminho}': {e}")
+        logger.error(f"❌ Error reading file '{path}': {e}")
         return None
 
 
-def combinar_prompt_conversa(prompt, conversa):
-    return f"{prompt}\n\nTRANSCRIÇÃO DA CONVERSA:\n{conversa}"
+def combine_prompt_and_chat(prompt: str, conversation: str) -> str:
+    """Combines the base prompt with the conversation content."""
+    return f"{prompt}\n\nCONVERSATION TRANSCRIPT:\n{conversation}"
 
 
-async def processar_conversa_para_pdf(
+# ======================================================================
+# Main Asynchronous Processing Function
+# ======================================================================
+
+async def process_conversation_to_pdf(
     prompt_path: Path,
     chat_path: Path,
     output_pdf: Path,
@@ -44,93 +63,86 @@ async def processar_conversa_para_pdf(
     zip_id: Optional[str] = None
 ):
     """
-    Processa uma conversa e gera um PDF de análise.
+    Process a conversation and generate an analytical PDF report.
+    Handles file loading, AI analysis, and PDF creation asynchronously.
 
     Args:
-        prompt_path: Caminho para o arquivo de prompt
-        chat_path: Caminho para o arquivo de chat
-        output_pdf: Caminho de saída para o PDF
-        tracker: Instância do StatusTracker para atualizações
-        zip_id: ID do processo para tracking
+        prompt_path: Path to the prompt text file.
+        chat_path: Path to the conversation text file.
+        output_pdf: Output path for the generated PDF.
+        tracker: Optional status tracker instance.
+        zip_id: Optional ID for process tracking.
     """
 
     async def update_status(message: str, progress: float):
-        """Atualiza o status se tracker e zip_id estiverem disponíveis"""
+        """Update progress safely if tracker is available."""
         if tracker and zip_id:
             await tracker.update(zip_id, message, progress)
 
-    def validar_arquivo(path: Path, descricao: str):
-        """Função auxiliar para validação de arquivos"""
+    def validate_file(path: Path, description: str) -> Optional[str]:
+        """Validate that the given file path exists."""
         if not path.exists():
-            error_msg = f"{descricao} não encontrado: {path}"
-            return error_msg
+            return f"{description} not found: {path}"
         return None
 
     try:
-        # Validação dos arquivos
-        prompt_error = validar_arquivo(prompt_path, "Arquivo de prompt")
-        if prompt_error:
-            await update_status(prompt_error, 0)
-            raise FileNotFoundError(prompt_error)
+        # ------------------------------------------------------------------
+        # 1️⃣ Validate Input Files
+        # ------------------------------------------------------------------
+        for desc, path in [("Prompt file", prompt_path), ("Chat file", chat_path)]:
+            if (error := validate_file(path, desc)):
+                await update_status(error, 0)
+                raise FileNotFoundError(error)
 
-        chat_error = validar_arquivo(chat_path, "Arquivo de chat")
-        if chat_error:
-            await update_status(chat_error, 0)
-            raise FileNotFoundError(chat_error)
+        # ------------------------------------------------------------------
+        # 2️⃣ Load Files (non-blocking using asyncio.to_thread)
+        # ------------------------------------------------------------------
+        await update_status("Loading files...", 0.2)
+        prompt, conversation = await asyncio.gather(
+            asyncio.to_thread(load_file_sync, prompt_path),
+            asyncio.to_thread(load_file_sync, chat_path)
+        )
 
-        # 🔄 Carrega os conteúdos dos arquivos de forma assíncrona
-        prompt = await asyncio.to_thread(carregar_arquivo, prompt_path)
-        conversa = await asyncio.to_thread(carregar_arquivo, chat_path)
+        if not prompt or not conversation:
+            msg = "Invalid prompt or conversation content."
+            await update_status(msg, 0)
+            raise ValueError(msg)
 
-        # Verifica se o conteúdo dos arquivos está correto
-        if not prompt or not conversa:
-            error_msg = "Prompt ou conversa inválidos"
-            await update_status(error_msg, 0)
-            raise ValueError(error_msg)
+        # ------------------------------------------------------------------
+        # 3️⃣ Prepare Analysis
+        # ------------------------------------------------------------------
+        await update_status("Preparing analysis...", 0.4)
+        full_message = combine_prompt_and_chat(prompt, conversation)
 
-        # Prepara o início do processamento
-        await update_status("Preparando análise...", 0.62)
-        mensagem_completa = combinar_prompt_conversa(prompt, conversa)
+        # ------------------------------------------------------------------
+        # 4️⃣ AI Analysis (synchronous call wrapped in thread)
+        # ------------------------------------------------------------------
+        await update_status("AI analyzing negotiation... (may take a few minutes)", 0.65)
+        ai_response = await asyncio.to_thread(enviar_mensagem_para_deepseek, full_message)
 
-        # Realiza a análise via IA (executada em thread para não travar o loop)
-        await update_status("IA analisando negociação ... (pode demorar 5 minutos)", 0.66)
-        resposta = await asyncio.to_thread(enviar_mensagem_para_deepseek, mensagem_completa)
+        if not ai_response:
+            msg = "Empty AI response."
+            await update_status(msg, 0)
+            raise RuntimeError(msg)
 
-        if not resposta:
-            error_msg = "Resposta da IA vazia"
-            await update_status(error_msg, 0)
-            raise RuntimeError(error_msg)
-
-        # Preparação do diretório de saída para o PDF
+        # ------------------------------------------------------------------
+        # 5️⃣ Generate PDF
+        # ------------------------------------------------------------------
         output_pdf.parent.mkdir(parents=True, exist_ok=True)
+        await update_status("Generating PDF report...", 0.8)
+        await asyncio.to_thread(salvar_markdown_em_pdf_visual, ai_response, output_pdf)
 
-        # Geração do relatório (já está não bloqueante)
-        await update_status("Gerando relatório...", 0.7)
-        await asyncio.to_thread(salvar_markdown_em_pdf_visual, resposta, output_pdf)
+        logger.info(f"✅ PDF report successfully generated: {output_pdf}")
+        await update_status("Report generation completed.", 1.0)
 
-        # Log de sucesso
-        logger.info(f"Relatório gerado: {output_pdf}")
-
-    except FileNotFoundError as e:
-        error_msg = f"Erro de arquivo: {str(e)}"
-        await update_status(error_msg, 0)
-        logger.error(error_msg)
-        raise
-
-    except ValueError as e:
-        error_msg = f"Erro de valor: {str(e)}"
-        await update_status(error_msg, 0)
-        logger.error(error_msg)
-        raise
-
-    except RuntimeError as e:
-        error_msg = f"Erro de execução: {str(e)}"
+    except (FileNotFoundError, ValueError, RuntimeError) as e:
+        error_msg = f"{type(e).__name__}: {str(e)}"
         await update_status(error_msg, 0)
         logger.error(error_msg)
         raise
 
     except Exception as e:
-        error_msg = f"Falha no processamento: {str(e)}"
+        error_msg = f"Unexpected error during processing: {str(e)}"
         await update_status(error_msg, 0)
-        logger.error(error_msg)
+        logger.exception(error_msg)
         raise
