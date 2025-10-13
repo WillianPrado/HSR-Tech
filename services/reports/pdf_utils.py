@@ -1,78 +1,38 @@
-# services\reports\pdf_utils.py
+# services/reports/pdf_utils.py
+
 import os
+import asyncio
 from typing import Optional
 from fpdf import FPDF
 import markdown2
 import pdfkit
-from weasyprint import HTML, CSS
+from weasyprint import HTML
 from jinja2 import Template
-import markdown2
 
-# CSS global usado para PDF visual
-DEFAULT_CSS_STYLE = """
-<style>
-    body { font-family: Arial, sans-serif; margin: 20px; }
-    h1, h2, h3, h4 { color: #2E4053; }
-    ul { margin-left: 20px; }
-    table, th, td { border: 1px solid #000; border-collapse: collapse; padding: 5px; }
-    blockquote { color: #555; margin-left: 20px; font-style: italic; }
-    code { background-color: #f4f4f4; padding: 2px 4px; font-family: monospace; }
-</style>
-"""
 
-def salvar_texto_em_pdf_simples(texto: str, nome_arquivo_pdf: str) -> None:
+class PDFGeneratorService:
     """
-    Salva um texto simples em PDF utilizando FPDF.
+    Service responsible for generating PDF files from plain text or Markdown content.
+    Optimized for performance and flexibility — supports both WeasyPrint and PDFKit.
     """
-    try:
-        pdf = FPDF()
-        pdf.add_page()
-        pdf.set_auto_page_break(auto=True, margin=15)
-        pdf.set_font("Arial", size=12)
 
-        for linha in texto.splitlines():
-            pdf.multi_cell(0, 10, linha)
-
-        pdf.output(nome_arquivo_pdf)
-        print(f"✅ PDF simples salvo com sucesso: {nome_arquivo_pdf}")
-    except Exception as e:
-        print(f"❌ Erro ao gerar PDF simples: {e}")
-
-def get_pdfkit_config() -> Optional[pdfkit.configuration]:
+    DEFAULT_CSS = """
+    <style>
+        body { font-family: Arial, sans-serif; margin: 20px; }
+        h1, h2, h3, h4 { color: #2E4053; }
+        ul { margin-left: 20px; }
+        table, th, td { border: 1px solid #000; border-collapse: collapse; padding: 5px; }
+        blockquote { color: #555; margin-left: 20px; font-style: italic; }
+        code { background-color: #f4f4f4; padding: 2px 4px; font-family: monospace; }
+    </style>
     """
-    Retorna a configuração do PDFKit com o caminho do wkhtmltopdf.
-    Usa variável de ambiente ou tenta autodetectar.
-    """
-    wkhtmltopdf_path = os.getenv("WKHTMLTOPDF_PATH")
 
-    if wkhtmltopdf_path:
-        if not os.path.isfile(wkhtmltopdf_path):
-            print(f"⚠️ Caminho inválido para wkhtmltopdf: {wkhtmltopdf_path}")
-            return None
-        return pdfkit.configuration(wkhtmltopdf=wkhtmltopdf_path)
-
-    # Tentativa de autodetecção (Linux/macOS)
-    for path in ["/usr/bin/wkhtmltopdf", "/usr/local/bin/wkhtmltopdf"]:
-        if os.path.isfile(path):
-            return pdfkit.configuration(wkhtmltopdf=path)
-
-    # Windows fallback padrão
-    windows_path = r"C:\Program Files\wkhtmltopdf\bin\wkhtmltopdf.exe"
-    if os.name == "nt" and os.path.isfile(windows_path):
-        return pdfkit.configuration(wkhtmltopdf=windows_path)
-
-    print("❌ wkhtmltopdf não encontrado. Configure a variável de ambiente WKHTMLTOPDF_PATH.")
-    return None
-
-def salvar_markdown_em_pdf_visual(markdown_texto: str, nome_arquivo_pdf: str, css: str = DEFAULT_CSS_STYLE):
-    try:
-        # Converte Markdown para HTML
-        html_convertido = markdown2.markdown(markdown_texto)
-
-        # Template com estilo embutido
-        html_template = Template("""
+    def __init__(self):
+        """Initialize service with precompiled HTML template and detected wkhtmltopdf configuration."""
+        self.css = self.DEFAULT_CSS
+        self.template = Template("""
             <!DOCTYPE html>
-            <html lang="pt-br">
+            <html lang="en">
             <head>
                 <meta charset="UTF-8">
                 {{ css|safe }}
@@ -82,10 +42,114 @@ def salvar_markdown_em_pdf_visual(markdown_texto: str, nome_arquivo_pdf: str, cs
             </body>
             </html>
         """)
+        self.pdfkit_config = self._detect_pdfkit_config()
 
-        html_final = html_template.render(css=css, content=html_convertido)
+    # ----------------------------------------------------------------------
+    # 🧩 PDFKit configuration detection
+    # ----------------------------------------------------------------------
+    def _detect_pdfkit_config(self) -> Optional[pdfkit.configuration]:
+        """
+        Detect wkhtmltopdf binary path for pdfkit, if available.
 
-        HTML(string=html_final).write_pdf(nome_arquivo_pdf)
-        print(f"✅ PDF salvo com sucesso com WeasyPrint: {nome_arquivo_pdf}")
-    except Exception as e:
-        print(f"❌ Erro ao gerar PDF com WeasyPrint: {e}")
+        Returns:
+            Optional[pdfkit.configuration]: PDFKit configuration or None.
+        """
+        wkhtmltopdf_path = os.getenv("WKHTMLTOPDF_PATH")
+
+        if wkhtmltopdf_path and os.path.isfile(wkhtmltopdf_path):
+            return pdfkit.configuration(wkhtmltopdf=wkhtmltopdf_path)
+
+        # Common installation paths
+        for path in ["/usr/bin/wkhtmltopdf", "/usr/local/bin/wkhtmltopdf"]:
+            if os.path.isfile(path):
+                return pdfkit.configuration(wkhtmltopdf=path)
+
+        # Windows fallback
+        windows_path = r"C:\Program Files\wkhtmltopdf\bin\wkhtmltopdf.exe"
+        if os.name == "nt" and os.path.isfile(windows_path):
+            return pdfkit.configuration(wkhtmltopdf=windows_path)
+
+        print("⚠️ wkhtmltopdf not found. Falling back to WeasyPrint.")
+        return None
+
+    # ----------------------------------------------------------------------
+    # 🧾 Simple Text → PDF
+    # ----------------------------------------------------------------------
+    async def save_text_as_pdf(self, text: str, output_pdf: str) -> None:
+        """
+        Save plain text into a PDF file using FPDF (very lightweight and fast).
+
+        Args:
+            text (str): Content to be written to the PDF.
+            output_pdf (str): Destination PDF path.
+        """
+
+        def _generate():
+            pdf = FPDF()
+            pdf.add_page()
+            pdf.set_auto_page_break(auto=True, margin=15)
+            pdf.set_font("Arial", size=12)
+
+            for line in text.splitlines():
+                pdf.multi_cell(0, 10, line)
+
+            pdf.output(output_pdf)
+
+        try:
+            await asyncio.to_thread(_generate)
+            print(f"✅ Simple PDF successfully saved: {output_pdf}")
+        except Exception as e:
+            print(f"❌ Error generating simple PDF: {e}")
+
+    # ----------------------------------------------------------------------
+    # 🎨 Markdown → PDF (Optimized)
+    # ----------------------------------------------------------------------
+    async def save_markdown_as_pdf(self, markdown_text: str, output_pdf: str, css: Optional[str] = None) -> None:
+        """
+        Converts Markdown text to a styled PDF using the fastest available engine.
+
+        Priority:
+        1. pdfkit (wkhtmltopdf) → very fast
+        2. WeasyPrint → slower but pure Python fallback
+
+        Args:
+            markdown_text (str): Markdown-formatted content.
+            output_pdf (str): Destination PDF path.
+            css (Optional[str]): Custom CSS styling. Defaults to DEFAULT_CSS.
+        """
+        css = css or self.css
+
+        # ✅ Pre-convert Markdown outside the thread (faster)
+        html_content = markdown2.markdown(markdown_text)
+        rendered_html = self.template.render(css=css, content=html_content)
+
+        async def _generate_with_pdfkit():
+            """Generate PDF using pdfkit (wkhtmltopdf) if available."""
+            options = {
+                "quiet": "",
+                "enable-local-file-access": None,
+                "encoding": "UTF-8",
+                "page-size": "A4",
+                "margin-top": "10mm",
+                "margin-bottom": "10mm",
+                "margin-left": "10mm",
+                "margin-right": "10mm",
+            }
+            pdfkit.from_string(rendered_html, output_pdf, options=options, configuration=self.pdfkit_config)
+
+        async def _generate_with_weasyprint():
+            """Generate PDF using WeasyPrint as fallback."""
+            def _generate():
+                HTML(string=rendered_html).write_pdf(output_pdf)
+            await asyncio.to_thread(_generate)
+
+        try:
+            if self.pdfkit_config:
+                await asyncio.to_thread(lambda: asyncio.run(_generate_with_pdfkit()))
+                print(f"✅ Visual Markdown PDF saved using PDFKit: {output_pdf}")
+            else:
+                await _generate_with_weasyprint()
+                print(f"✅ Visual Markdown PDF saved using WeasyPrint: {output_pdf}")
+
+        except Exception as e:
+            print(f"❌ Error generating Markdown PDF: {e}")

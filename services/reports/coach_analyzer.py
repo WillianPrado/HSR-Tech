@@ -7,12 +7,12 @@ from anyio import Path
 from datetime import datetime
 
 from services.reports.deepseek_client import DeepSeekClient
-from services.reports.pdf_utils import salvar_markdown_em_pdf_visual
+from services.reports.pdf_utils import PDFGeneratorService
 from core.status_tracker import set_status
 
 logger = logging.getLogger(__name__)
 deepseek_client = DeepSeekClient()
-
+pdf_service = PDFGeneratorService()
 # ======================================================================
 # Abstract Interface for Tracking Progress
 # ======================================================================
@@ -131,7 +131,8 @@ async def process_conversation_to_pdf(
         # ------------------------------------------------------------------
         output_pdf.parent.mkdir(parents=True, exist_ok=True)
         await update_status("Generating PDF report...", 0.8)
-        await asyncio.to_thread(salvar_markdown_em_pdf_visual, ai_response, output_pdf)
+        await pdf_service.save_markdown_as_pdf(ai_response, output_pdf)
+
 
         logger.info(f"✅ PDF report successfully generated: {output_pdf}")
         await update_status("Report generation completed.", 1.0)
