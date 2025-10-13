@@ -7,7 +7,7 @@ from core.http.async_http_client import AsyncHTTPClient
 from services.db_handler import get_db
 from core.auth import verify_token
 from models.user import User
-from services.reports.deepseek_client import enviar_mensagem_para_deepseek
+from services.reports.deepseek_client import DeepSeekClient
 from services.audio.openai_transcriber import OpenAITranscriber
 
 
@@ -20,9 +20,15 @@ async def get_http_client() -> AsyncGenerator[AsyncHTTPClient, None]:
     finally:
         await client.close()
 
-async def get_llm_client(http_client: AsyncHTTPClient = Depends(get_http_client)) -> enviar_mensagem_para_deepseek:
-    return enviar_mensagem_para_deepseek(http_client)
-
+async def get_llm_client() -> AsyncGenerator[DeepSeekClient, None]:
+    """
+    Dependency that provides DeepSeekClient instance.
+    """
+    client = DeepSeekClient()
+    try:
+        yield client
+    finally:
+        await client.close()
 async def get_transcriber(http_client: AsyncHTTPClient = Depends(get_http_client)) -> OpenAITranscriber:
     return OpenAITranscriber(http_client)
 

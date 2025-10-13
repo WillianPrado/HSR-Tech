@@ -6,12 +6,12 @@ from typing import Optional
 from anyio import Path
 from datetime import datetime
 
-from services.reports.deepseek_client import enviar_mensagem_para_deepseek
+from services.reports.deepseek_client import DeepSeekClient
 from services.reports.pdf_utils import salvar_markdown_em_pdf_visual
 from core.status_tracker import set_status
 
 logger = logging.getLogger(__name__)
-
+deepseek_client = DeepSeekClient()
 
 # ======================================================================
 # Abstract Interface for Tracking Progress
@@ -119,7 +119,7 @@ async def process_conversation_to_pdf(
         # 4️⃣ AI Analysis (synchronous call wrapped in thread)
         # ------------------------------------------------------------------
         await update_status("AI analyzing negotiation... (may take a few minutes)", 0.65)
-        ai_response = await asyncio.to_thread(enviar_mensagem_para_deepseek, full_message)
+        ai_response = await deepseek_client.send_message(full_message)
 
         if not ai_response:
             msg = "Empty AI response."
