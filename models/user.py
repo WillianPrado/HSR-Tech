@@ -1,4 +1,4 @@
-# backend/models/user.py
+# models/user.py
 import datetime
 from sqlalchemy import Column, Integer, String, DateTime, Enum, Boolean
 from sqlalchemy.orm import declarative_base

@@ -9,9 +9,6 @@ app = FastAPI(
     title="Sele Analytics API",
     description="API para processamento de análises de vendas",
     version="1.0.0",
-    docs_url="/api/docs",
-    redoc_url="/api/redoc", 
-    openapi_url="/api/openapi.json",
     timeout=300,
 )
 

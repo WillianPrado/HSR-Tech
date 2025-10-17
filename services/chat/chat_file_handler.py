@@ -1,4 +1,4 @@
-# backend/services/chat/chat_file_handler.py
+# services/chat/chat_file_handler.py
 import re
 from pathlib import Path
 from typing import Dict

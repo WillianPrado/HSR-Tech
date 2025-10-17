@@ -1,4 +1,4 @@
-# backend/utils/async_file_utils.py - ARQUIVO NOVO E ISOLADO
+# utils/async_file_utils.py - ARQUIVO NOVO E ISOLADO
 import aiofiles
 from pathlib import Path
 from charset_normalizer import from_bytes

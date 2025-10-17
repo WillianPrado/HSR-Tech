@@ -96,13 +96,23 @@ class ZipProcessingPipeline:
         await self._generate_report(chat_file, output_dir, zip_id)
 
     async def _find_chat_file(self, files: List[Path], zip_id: str) -> Path:
-        chat_file = await asyncio.to_thread(
-            self.chat_finder.find_chat_file, 
-            files
-        )
+        """
+        Fully asynchronous chat file detection using the new async finder.
+        Keeps progress updates responsive during scanning.
+        """
+        await self.tracker.update(zip_id, "Buscando arquivo de chat", 0.15)
+
+        try:
+            chat_file = await self.chat_finder.find_chat_file_async(files)
+        except Exception as e:
+            await self.tracker.update(zip_id, f"Erro ao buscar chat: {e}", 0.3)
+            raise
+
         if not chat_file:
             await self.tracker.update(zip_id, "Chat não encontrado", 0.3)
             raise ValueError("Arquivo de chat não encontrado")
+
+        await self.tracker.update(zip_id, f"Chat encontrado: {chat_file.name}", 0.18)
         return chat_file
 
     async def _process_audios(

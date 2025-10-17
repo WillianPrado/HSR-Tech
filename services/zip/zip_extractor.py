@@ -1,4 +1,4 @@
-# backend/services/zip/zip_extractor.py - VERSÃO CORRIGIDA
+# services/zip/zip_extractor.py - VERSÃO CORRIGIDA
 from abc import ABC, abstractmethod
 from pathlib import Path
 import zipfile
