@@ -107,7 +107,7 @@ class StatusProcessor:
     def _build_results(self) -> StatusResults:
         """Constrói os links de resultados (extensível)"""
         return StatusResults(
-            transcriptions=f"/results/{self.zip_id}/transcriptions",
-            pdf_report=f"/results/{self.zip_id}/report",
-            analysis_data=f"/results/{self.zip_id}/analysis"
+            transcriptions=f"results/{self.zip_id}/transcriptions",
+            pdf_report=f"results/{self.zip_id}/report",
+            analysis_data=f"results/{self.zip_id}/analysis"
         )
