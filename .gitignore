@@ -148,7 +148,9 @@ venv.bak/
 # Spyder project settings
 .spyderproject
 .spyproject
-storage/
+/storage/
+!core/storage/
+!core/storage/*.py
 # Rope project settings
 .ropeproject
 
