@@ -94,19 +94,26 @@ app = FastAPI(
 # MIDDLEWARE CONFIGURATION
 # ==============================================================
 
-# CORS Middleware
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=[
+# CORS origins from environment (comma-separated)
+allowed_origins_env = os.getenv("ALLOWED_ORIGINS", "")
+allowed_origins = [origin.strip() for origin in allowed_origins_env.split(",") if origin.strip()]
+
+if not allowed_origins:
+    allowed_origins = [
         "http://localhost:3000",
         "http://127.0.0.1:3000",
         "http://localhost:4200",
         "http://127.0.0.1:4200",
-        "https://yourdomain.com"  # TODO: Add production domain
-    ],
+        "https://sele-analytics.netlify.app",
+    ]
+
+# CORS Middleware
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=allowed_origins,
     allow_credentials=True,
     allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"],
-    allow_headers=["Authorization", "Content-Type", "X-Requested-With"],
+    allow_headers=["*"],
 )
 
 # Custom middleware for request logging and timing
