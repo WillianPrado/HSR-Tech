@@ -2,6 +2,17 @@
   "version": "0.2.0",
   "configurations": [
     {
+      "name": "Python Debugger: FastAPI",
+      "type": "debugpy",
+      "request": "launch",
+      "module": "uvicorn",
+      "args": [
+        "main:app",
+        "--reload"
+      ],
+      "jinja": true
+    },
+    {
       "name": "Python Debugger: Current File",
       "type": "debugpy",
       "request": "launch",
@@ -24,7 +35,7 @@
         "main:app",
         "--reload"
       ],
-      "python": "${workspaceFolder}/venv/Scripts/python.exe",
+      "python": "${workspaceFolder}/venv311/Scripts/python.exe",
       "jinja": true,
       "justMyCode": false,
       "env": {
@@ -37,7 +48,7 @@
       "request": "launch",
       "program": "${file}",
       "console": "integratedTerminal",
-      "python": "${workspaceFolder}/venv/Scripts/python.exe"
+      "python": "${workspaceFolder}/venv311/Scripts/python.exe"
     },
     {
       "name": "Celery Worker Debug",
@@ -53,7 +64,7 @@
       ],
       "console": "integratedTerminal",
       "justMyCode": false,
-      "python": "${workspaceFolder}/venv/Scripts/python.exe"
+      "python": "${workspaceFolder}/venv311/Scripts/python.exe"
     }
   ]
 }

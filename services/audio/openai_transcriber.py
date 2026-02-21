@@ -1,23 +1,30 @@
 # backend\services\audio\openai_transcriber.py
 import asyncio
+import tempfile
 import aiohttp
-import requests
 from abc import ABC, abstractmethod
-import os
 import subprocess
 from pathlib import Path
 from core.config import settings
 import logging
-from tenacity import retry, stop_after_attempt, wait_exponential
+from tenacity import retry, stop_after_attempt, wait_random_exponential, retry_if_exception
 
 # Configuração de logging
 logger = logging.getLogger(__name__)
+
+
+def _is_retryable_transcription_error(exception: BaseException) -> bool:
+    if isinstance(exception, aiohttp.ClientResponseError):
+        return exception.status == 429 or exception.status >= 500
+    if isinstance(exception, (aiohttp.ClientError, asyncio.TimeoutError)):
+        return True
+    return False
 
 class Transcriber(ABC):
     @abstractmethod
     def transcribe(self, audio_path: str) -> str:
         pass
-import subprocess
+
 
 def convert_opus_to_mp3(input_path: str) -> str:
     """Converte arquivo OPUS para MP3 com tratamento de erros completo"""
@@ -74,7 +81,16 @@ class OpenAITranscriber(Transcriber):
         self.api_key = api_key
         self.model = model
 
-    @retry(stop=stop_after_attempt(3), wait=wait_exponential(multiplier=1, min=4, max=10))
+    @retry(
+        stop=stop_after_attempt(settings.TRANSCRIPTION_RETRY_ATTEMPTS),
+        wait=wait_random_exponential(
+            multiplier=1,
+            min=settings.TRANSCRIPTION_RETRY_MIN_WAIT_SECONDS,
+            max=settings.TRANSCRIPTION_RETRY_MAX_WAIT_SECONDS,
+        ),
+        retry=retry_if_exception(_is_retryable_transcription_error),
+        reraise=True,
+    )
     async def transcribe(self, audio_path: str) -> str:  # Adicione async aqui
         """Transcreve áudio usando OpenAI Whisper totalmente em memória"""
         try:
@@ -125,7 +141,7 @@ class OpenAITranscriber(Transcriber):
                     "https://api.openai.com/v1/audio/transcriptions",
                     headers={"Authorization": f"Bearer {self.api_key}"},
                     data=data,
-                    timeout=30
+                    timeout=60
                 ) as response:
                     response.raise_for_status()
                     result = await response.json()

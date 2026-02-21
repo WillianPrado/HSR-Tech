@@ -28,6 +28,7 @@ from services.zip.zip_extractor import AsyncZipExtractor
 from services.chat.chat_file_handler import ChatProcessor
 from services.audio.openai_transcriber import OpenAITranscriber
 from services.reports.coach_analyzer import process_conversation_to_pdf
+from core.config import settings
 from utils.find_chat_file import create_chat_finder, ChatFileFinder
 from utils.file_cleaner import clean_extracted_files
 from core.status_tracker import set_status
@@ -70,7 +71,7 @@ class AudioProcessor:
         Transcribes a single audio file asynchronously using OpenAITranscriber.
         The heavy work is delegated to a thread pool to avoid blocking.
         """
-        return await asyncio.to_thread(self.transcriber.transcribe, str(audio_path))
+        return await self.transcriber.transcribe(str(audio_path))
 
 
 # =====================================================================
@@ -98,6 +99,7 @@ class ZipProcessingPipeline:
         self.chat_finder = chat_finder
         self.transcriber = transcriber
         self.tracker = status_tracker
+        self.max_concurrent_transcriptions = max(1, settings.MAX_CONCURRENT_TRANSCRIPTIONS)
 
     # -----------------------------------------------------------------
     async def execute(self, zip_path: Path) -> Dict[str, Optional[str]]:
@@ -177,10 +179,19 @@ class ZipProcessingPipeline:
             logger.info("No audio files detected in ZIP.")
             return {}
 
+        semaphore = asyncio.Semaphore(self.max_concurrent_transcriptions)
         tasks = []
         for i, (audio_name, audio_path) in enumerate(audio_dict.items()):
             progress = 0.3 + (i / max(len(audio_dict), 1)) * 0.6
-            tasks.append(self._process_single_audio(audio_name, audio_path, zip_id, progress))
+            tasks.append(
+                self._process_single_audio(
+                    audio_name,
+                    audio_path,
+                    zip_id,
+                    progress,
+                    semaphore,
+                )
+            )
 
         results = await asyncio.gather(*tasks, return_exceptions=True)
 
@@ -196,13 +207,19 @@ class ZipProcessingPipeline:
 
     # -----------------------------------------------------------------
     async def _process_single_audio(
-        self, audio_name: str, audio_path: Path, zip_id: str, progress: float
+        self,
+        audio_name: str,
+        audio_path: Path,
+        zip_id: str,
+        progress: float,
+        semaphore: asyncio.Semaphore,
     ) -> str:
         """Transcribes a single audio file with progress feedback."""
         await self.tracker.update(zip_id, f"Transcrevendo {audio_name}", progress)
 
         try:
-            return await self.transcriber.transcribe(audio_path)
+            async with semaphore:
+                return await self.transcriber.transcribe(audio_path)
         except Exception as e:
             logger.error(f"Falha na transcrição de {audio_name}", exc_info=True)
             raise
