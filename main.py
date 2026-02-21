@@ -15,6 +15,7 @@ from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.trustedhost import TrustedHostMiddleware
 import time
 import logging
+import re
 from logging.config import dictConfig
 from contextlib import asynccontextmanager
 from datetime import datetime
@@ -94,9 +95,15 @@ app = FastAPI(
 # MIDDLEWARE CONFIGURATION
 # ==============================================================
 
+def _normalize_origin(origin: str) -> str:
+    cleaned = origin.strip().strip('"').strip("'")
+    if cleaned.endswith("/"):
+        cleaned = cleaned[:-1]
+    return cleaned
+
 # CORS origins from environment (comma-separated)
 allowed_origins_env = os.getenv("ALLOWED_ORIGINS", "")
-allowed_origins = [origin.strip() for origin in allowed_origins_env.split(",") if origin.strip()]
+allowed_origins = [_normalize_origin(origin) for origin in allowed_origins_env.split(",") if _normalize_origin(origin)]
 
 if not allowed_origins:
     allowed_origins = [
@@ -105,13 +112,13 @@ if not allowed_origins:
         "http://localhost:4200",
         "http://127.0.0.1:4200",
         "https://sele-analytics.netlify.app",
-        "https://seles-analyces-back-end.onrender.com",
     ]
 
 # CORS Middleware
 app.add_middleware(
     CORSMiddleware,
     allow_origins=allowed_origins,
+    allow_origin_regex=r"^https://([a-z0-9-]+\.)?netlify\.app$",
     allow_credentials=True,
     allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"],
     allow_headers=["*"],
