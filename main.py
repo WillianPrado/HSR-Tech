@@ -105,6 +105,7 @@ if not allowed_origins:
         "http://localhost:4200",
         "http://127.0.0.1:4200",
         "https://sele-analytics.netlify.app",
+        "https://seles-analyces-back-end.onrender.com",
     ]
 
 # CORS Middleware
