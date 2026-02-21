@@ -11,13 +11,34 @@
   from = "/api/*"
   to = "/.netlify/functions/api/:splat"
   status = 200
+  force = true
 
 [[redirects]]
   from = "/health"
   to = "/.netlify/functions/api/health"
   status = 200
+  force = true
+
+[[redirects]]
+  from = "/docs"
+  to = "/.netlify/functions/api/docs"
+  status = 200
+  force = true
+
+[[redirects]]
+  from = "/redoc"
+  to = "/.netlify/functions/api/redoc"
+  status = 200
+  force = true
+
+[[redirects]]
+  from = "/openapi.json"
+  to = "/.netlify/functions/api/openapi.json"
+  status = 200
+  force = true
 
 [[redirects]]
   from = "/"
   to = "/.netlify/functions/api"
   status = 200
+  force = true
