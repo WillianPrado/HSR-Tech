@@ -23,11 +23,13 @@ from abc import ABC, abstractmethod
 
 import aiofiles
 from charset_normalizer import from_bytes
+from mysqlx import Session
 
+from repository.conversation_repository import create_conversation
 from services.zip.zip_extractor import AsyncZipExtractor
 from services.chat.chat_file_handler import ChatProcessor
 from services.audio.openai_transcriber import OpenAITranscriber
-from services.reports.coach_analyzer import process_conversation_to_pdf
+from services.reports.coach_analyzer import create_analysis_prompt, process_conversation_to_pdf
 from core.config import settings
 from utils.find_chat_file import create_chat_finder, ChatFileFinder
 from utils.file_cleaner import clean_extracted_files
@@ -102,14 +104,14 @@ class ZipProcessingPipeline:
         self.max_concurrent_transcriptions = max(1, settings.MAX_CONCURRENT_TRANSCRIPTIONS)
 
     # -----------------------------------------------------------------
-    async def execute(self, zip_path: Path) -> Dict[str, Optional[str]]:
+    async def execute(self, zip_path: Path, user_id: int, db: Session) -> Dict[str, Optional[str]]:
         """Entry point: orchestrates full processing of a ZIP file."""
         base_dir = Path("storage")
         output_dir = base_dir / "output"
         zip_id = zip_path.name
 
         try:
-            await self._process_zip_file(zip_path, output_dir, zip_id)
+            await self._process_zip_file(zip_path, output_dir, zip_id, user_id, db)
         except Exception as e:
             logger.critical(f"Fatal error: {e}", exc_info=True)
             await self.tracker.update(zip_id, f"Erro geral ❌: {e}", 1.0)
@@ -118,7 +120,12 @@ class ZipProcessingPipeline:
         return {"status": "success"}
 
     # -----------------------------------------------------------------
-    async def _process_zip_file(self, zip_path: Path, output_dir: Path, zip_id: str):
+    async def _process_zip_file(self, 
+                                zip_path: Path, 
+                                output_dir: Path, 
+                                zip_id: str,
+                                user_id: int,
+                                db: Session):
         """Main execution chain for a single ZIP package."""
         await self.tracker.update(zip_id, "Iniciando extração", 0.1)
         extracted_files = await self.extractor.extract(zip_path, output_dir)
@@ -140,8 +147,18 @@ class ZipProcessingPipeline:
 
         transcriptions = await self._process_audios(audio_dict, zip_id)
         await chat_processor.update_chat_file(chat_file, transcriptions)
-
-        await self._generate_report(chat_file, output_dir, zip_id)
+        conversation = await read_file_async(chat_file)
+       # await self._generate_report(chat_file, output_dir, zip_id)
+        
+        create_conversation(
+            db=db,
+            user_id=user_id,  # Use the actual user ID from context
+            title=f"Análise {zip_id.replace('.zip', '')}",
+            transcript=conversation,
+            audio_path=str(chat_file),
+        )
+        
+        await self.tracker.update(zip_id, "Conversa salva no banco de dados", 0.85)
 
     # -----------------------------------------------------------------
     async def _find_chat_file(self, files: List[Path], zip_id: str) -> Path:
@@ -236,17 +253,15 @@ class ZipProcessingPipeline:
         filename = zip_id.replace(".zip", "")
         output_pdf = output_dir / f"analise_{filename}.pdf"
 
-        try:
-            await process_conversation_to_pdf(
-                prompt_path, chat_file, output_pdf, self.tracker, zip_id
-            )
-        except Exception as e:
-            logger.error(f"Erro ao gerar relatório: {e}")
-            raise
+        
 
         await self.tracker.update(zip_id, "Excluindo conversa", 0.8)
         await self._cleanup_files()
-        await self.tracker.update(zip_id, "Concluído", 1.0)
+        create_conversation(
+            user_id=1,  # Placeholder: replace with actual user ID from context
+            title=f"Análise {filename}",
+            audio_path=str(chat_file),
+        )
 
     # -----------------------------------------------------------------
     async def _cleanup_files(self):
@@ -278,7 +293,7 @@ async def read_file_async(path: Path) -> str:
 # ENTRY POINT
 # =====================================================================
 
-async def process_zip(zip_path: Path) -> Dict[str, Optional[str]]:
+async def process_zip(zip_path: Path, user_id: int, db: Session) -> Dict[str, Optional[str]]:
     """Main entry point used by FastAPI route or background worker."""
     if not (api_key := os.getenv("OPENAI_API_KEY")):
         raise RuntimeError("OPENAI_API_KEY not configured")
@@ -295,4 +310,4 @@ async def process_zip(zip_path: Path) -> Dict[str, Optional[str]]:
         status_tracker=tracker,
     )
 
-    return await pipeline.execute(zip_path)
+    return await pipeline.execute(zip_path, user_id, db)

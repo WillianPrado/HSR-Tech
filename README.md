@@ -46,3 +46,27 @@ Se houver erros na instalação:
 Verifique a versão do Python (recomendo 3.8+)
 
 
+## Migrações de Banco (Alembic)
+
+O projeto agora possui Alembic configurado com:
+
+- [alembic.ini](alembic.ini)
+- [alembic/env.py](alembic/env.py)
+- [alembic/versions/0001_initial_schema.py](alembic/versions/0001_initial_schema.py)
+
+No startup da API, o sistema executa automaticamente `alembic upgrade head`.
+
+### Fluxo recomendado para novas mudanças de modelo
+
+1. Altere seus modelos SQLAlchemy.
+2. Gere uma nova migration:
+
+	`alembic revision --autogenerate -m "descrição da mudança"`
+
+3. Rode a API normalmente (`uvicorn main:app --reload`), e a migration será aplicada no startup.
+
+Se preferir aplicar manualmente:
+
+`alembic upgrade head`
+
+

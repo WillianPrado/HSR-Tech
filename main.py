@@ -24,7 +24,7 @@ import os
 from services.db_handler import init_db
 
 # Import routers
-from routes import sales_upload, report_service, status_service, auth
+from routes import sales_upload, report_service, status_service, auth, analysis_service
 
 # ==============================================================
 # UNICODE FIX FOR WINDOWS
@@ -261,6 +261,7 @@ app.include_router(sales_upload.router, prefix="/api/v1", tags=["Uploads"])
 app.include_router(report_service.router, prefix="/api/v1", tags=["Reports"])
 app.include_router(status_service.router, prefix="/api/v1", tags=["Status"])
 app.include_router(auth.router, prefix="/api/v1", tags=["Authentication"])
+app.include_router(analysis_service.router, prefix="/api/v1", tags=["Analysis"])
 
 # ==============================================================
 # LOGGING CONFIGURATION (UNICODE SAFE)
