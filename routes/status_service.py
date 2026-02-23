@@ -6,9 +6,9 @@ from models.user import User
 
 router = APIRouter(tags=["Status"])
 
-@router.get("/status/{zip_id}", response_model=StatusResponse)
-async def check_zip_status(
-    zip_id: str
+@router.get("/status/{conversation_id}", response_model=StatusResponse)
+async def check_conversation_status(
+    conversation_id: str
     #,current_user: User = Depends(get_current_user)
 ):
     """
@@ -20,7 +20,7 @@ async def check_zip_status(
         408: Timeout na consulta
         500: Erro interno no servidor
     """
-    processor = StatusProcessor(zip_id)
+    processor = StatusProcessor(conversation_id)
     response = await processor.get_status_response()
     
     if isinstance(response, StatusError):

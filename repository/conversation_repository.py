@@ -12,6 +12,20 @@ from models.conversation import Conversation
 logger = logging.getLogger(__name__)
 
 
+def conversation_to_dict(conversation: Conversation) -> dict[str, Any]:
+    """Serialize a Conversation entity to frontend-safe payload."""
+    return {
+        "id": str(conversation.id),
+        "user_id": conversation.user_id,
+        "title": conversation.title,
+        "transcript": conversation.transcript,
+        "analysis": conversation.analysis,
+        "audio_path": conversation.audio_path,
+        "created_at": conversation.created_at.isoformat() if conversation.created_at else None,
+        "updated_at": conversation.updated_at.isoformat() if conversation.updated_at else None,
+    }
+
+
 def get_conversation_by_id(db: Session, conversation_id: UUID) -> Conversation | None:
     """Return one conversation by primary key, or None when not found."""
     try:
@@ -19,6 +33,17 @@ def get_conversation_by_id(db: Session, conversation_id: UUID) -> Conversation |
     except SQLAlchemyError:
         logger.exception("Database error while fetching conversation by id")
         raise
+
+
+def get_conversation_by_id_for_frontend(
+    db: Session,
+    conversation_id: UUID,
+) -> dict[str, Any] | None:
+    """Return one conversation payload with string UUID for API/frontend usage."""
+    conversation = get_conversation_by_id(db, conversation_id)
+    if conversation is None:
+        return None
+    return conversation_to_dict(conversation)
 
 
 def list_conversations_by_user(
@@ -42,6 +67,61 @@ def list_conversations_by_user(
         )
     except SQLAlchemyError:
         logger.exception("Database error while listing conversations")
+        raise
+
+
+def list_conversations_by_user_for_frontend(
+    db: Session,
+    user_id: int,
+    skip: int = 0,
+    limit: int = 50,
+) -> list[dict[str, Any]]:
+    """List conversation payloads with string UUID for API/frontend usage."""
+    conversations = list_conversations_by_user(
+        db=db,
+        user_id=user_id,
+        skip=skip,
+        limit=limit,
+    )
+    return [conversation_to_dict(item) for item in conversations]
+
+
+def list_conversation_summaries_by_user(
+    db: Session,
+    user_id: int,
+    skip: int = 0,
+    limit: int = 50,
+) -> list[dict[str, Any]]:
+    """List lightweight conversation summaries selecting only required columns."""
+    safe_limit = max(1, min(limit, 200))
+    safe_skip = max(0, skip)
+
+    try:
+        rows = (
+            db.query(
+                Conversation.id,
+                Conversation.title,
+                Conversation.created_at,
+                Conversation.updated_at,
+            )
+            .filter(Conversation.user_id == user_id)
+            .order_by(Conversation.updated_at.desc())
+            .offset(safe_skip)
+            .limit(safe_limit)
+            .all()
+        )
+
+        return [
+            {
+                "id": str(row.id),
+                "title": row.title,
+                "created_at": row.created_at.isoformat() if row.created_at else None,
+                "updated_at": row.updated_at.isoformat() if row.updated_at else None,
+            }
+            for row in rows
+        ]
+    except SQLAlchemyError:
+        logger.exception("Database error while listing conversation summaries")
         raise
 
 

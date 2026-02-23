@@ -19,13 +19,14 @@ import asyncio
 import logging
 from pathlib import Path
 from typing import Dict, List, Optional
+from uuid import UUID
 from abc import ABC, abstractmethod
 
 import aiofiles
 from charset_normalizer import from_bytes
 from mysqlx import Session
 
-from repository.conversation_repository import create_conversation
+from repository.conversation_repository import create_conversation, update_conversation
 from services.zip.zip_extractor import AsyncZipExtractor
 from services.chat.chat_file_handler import ChatProcessor
 from services.audio.openai_transcriber import OpenAITranscriber
@@ -46,7 +47,7 @@ class StatusTracker(ABC):
     """Abstract interface for progress tracking and status updates."""
 
     @abstractmethod
-    async def update(self, zip_id: str, message: str, progress: float):
+    async def update(self, conversation_id: str, message: str, progress: float):
         """Persist the current processing status."""
         raise NotImplementedError
 
@@ -54,8 +55,8 @@ class StatusTracker(ABC):
 class DatabaseStatusTracker(StatusTracker):
     """Concrete tracker that persists progress to the database."""
 
-    async def update(self, zip_id: str, message: str, progress: float):
-        await set_status(zip_id, message, progress)
+    async def update(self, conversation_id: str, message: str, progress: float):
+        await set_status(conversation_id, message, progress)
 
 
 # =====================================================================
@@ -104,17 +105,16 @@ class ZipProcessingPipeline:
         self.max_concurrent_transcriptions = max(1, settings.MAX_CONCURRENT_TRANSCRIPTIONS)
 
     # -----------------------------------------------------------------
-    async def execute(self, zip_path: Path, user_id: int, db: Session) -> Dict[str, Optional[str]]:
+    async def execute(self, zip_path: Path, user_id: int, db: Session, conversation_id: str) -> Dict[str, Optional[str]]:
         """Entry point: orchestrates full processing of a ZIP file."""
         base_dir = Path("storage")
         output_dir = base_dir / "output"
-        zip_id = zip_path.name
 
         try:
-            await self._process_zip_file(zip_path, output_dir, zip_id, user_id, db)
+            await self._process_zip_file(zip_path, output_dir, conversation_id, user_id, db)
         except Exception as e:
             logger.critical(f"Fatal error: {e}", exc_info=True)
-            await self.tracker.update(zip_id, f"Erro geral ❌: {e}", 1.0)
+            await self.tracker.update(conversation_id, f"Erro geral ❌: {e}", 1.0)
             return {"status": "error", "message": str(e)}
 
         return {"status": "success"}
@@ -123,16 +123,16 @@ class ZipProcessingPipeline:
     async def _process_zip_file(self, 
                                 zip_path: Path, 
                                 output_dir: Path, 
-                                zip_id: str,
+                                conversation_id: str,
                                 user_id: int,
                                 db: Session):
         """Main execution chain for a single ZIP package."""
-        await self.tracker.update(zip_id, "Iniciando extração", 0.1)
+        await self.tracker.update(conversation_id, "Iniciando extração", 0.1)
         extracted_files = await self.extractor.extract(zip_path, output_dir)
 
-        chat_file = await self._find_chat_file(extracted_files, zip_id)
+        chat_file = await self._find_chat_file(extracted_files, conversation_id)
 
-        await self.tracker.update(zip_id, "Processando chat", 0.20)
+        await self.tracker.update(conversation_id, "Processando chat", 0.20)
         chat_content = await read_file_async(chat_file)
 
         chat_processor = ChatProcessor()
@@ -145,28 +145,39 @@ class ZipProcessingPipeline:
             if file.suffix.lower() in (".opus", ".m4a", ".mp3")
         }
 
-        transcriptions = await self._process_audios(audio_dict, zip_id)
+        transcriptions = await self._process_audios(audio_dict, conversation_id)
         await chat_processor.update_chat_file(chat_file, transcriptions)
         conversation = await read_file_async(chat_file)
-       # await self._generate_report(chat_file, output_dir, zip_id)
-        
-        create_conversation(
+       # await self._generate_report(chat_file, output_dir, conversation_id)
+
+        conversation_uuid = UUID(conversation_id)
+        updated = update_conversation(
             db=db,
-            user_id=user_id,  # Use the actual user ID from context
-            title=f"Análise {zip_id.replace('.zip', '')}",
-            transcript=conversation,
-            audio_path=str(chat_file),
+            conversation_id=conversation_uuid,
+            updates={
+                "transcript": conversation
+            },
         )
+
+        if updated is None:
+            create_conversation(
+                db=db,
+                user_id=user_id,
+                conversation_id=conversation_uuid,
+                title=f"Análise {zip_path.stem}",
+                transcript=conversation,
+                audio_path=str(chat_file),
+            )
         
-        await self.tracker.update(zip_id, "Conversa salva no banco de dados", 0.85)
+        await self.tracker.update(conversation_id, "Conversa salva no banco de dados", 0.85)
 
     # -----------------------------------------------------------------
-    async def _find_chat_file(self, files: List[Path], zip_id: str) -> Path:
+    async def _find_chat_file(self, files: List[Path], conversation_id: str) -> Path:
         """
         Fully asynchronous chat file detection using ChatFileFinder.
         Updates status while scanning to keep UI responsive.
         """
-        await self.tracker.update(zip_id, "Buscando arquivo de chat", 0.15)
+        await self.tracker.update(conversation_id, "Buscando arquivo de chat", 0.15)
 
         try:
             chat_file = await asyncio.wait_for(
@@ -174,23 +185,23 @@ class ZipProcessingPipeline:
                 timeout=30
             )
         except asyncio.TimeoutError:
-            await self.tracker.update(zip_id, "Busca de chat expirou (timeout)", 0.3)
+            await self.tracker.update(conversation_id, "Busca de chat expirou (timeout)", 0.3)
             raise TimeoutError("Chat search timed out")
         except Exception as e:
-            await self.tracker.update(zip_id, f"Erro ao buscar chat: {e}", 0.3)
+            await self.tracker.update(conversation_id, f"Erro ao buscar chat: {e}", 0.3)
             raise
 
         if not chat_file:
-            await self.tracker.update(zip_id, "Chat não encontrado", 0.3)
+            await self.tracker.update(conversation_id, "Chat não encontrado", 0.3)
             raise FileNotFoundError("Nenhum arquivo de chat válido foi encontrado")
 
-        await self.tracker.update(zip_id, f"Chat encontrado: {chat_file.name}", 0.18)
+        await self.tracker.update(conversation_id, f"Chat encontrado: {chat_file.name}", 0.18)
         return chat_file
 
     # -----------------------------------------------------------------
-    async def _process_audios(self, audio_dict: Dict[str, Path], zip_id: str) -> Dict[str, str]:
+    async def _process_audios(self, audio_dict: Dict[str, Path], conversation_id: str) -> Dict[str, str]:
         """Runs concurrent transcription of all audio files."""
-        await self.tracker.update(zip_id, "Processando áudios", 0.3)
+        await self.tracker.update(conversation_id, "Processando áudios", 0.3)
 
         if not audio_dict:
             logger.info("No audio files detected in ZIP.")
@@ -204,7 +215,7 @@ class ZipProcessingPipeline:
                 self._process_single_audio(
                     audio_name,
                     audio_path,
-                    zip_id,
+                    conversation_id,
                     progress,
                     semaphore,
                 )
@@ -227,12 +238,12 @@ class ZipProcessingPipeline:
         self,
         audio_name: str,
         audio_path: Path,
-        zip_id: str,
+        conversation_id: str,
         progress: float,
         semaphore: asyncio.Semaphore,
     ) -> str:
         """Transcribes a single audio file with progress feedback."""
-        await self.tracker.update(zip_id, f"Transcrevendo {audio_name}", progress)
+        await self.tracker.update(conversation_id, f"Transcrevendo {audio_name}", progress)
 
         try:
             async with semaphore:
@@ -293,8 +304,23 @@ async def read_file_async(path: Path) -> str:
 # ENTRY POINT
 # =====================================================================
 
-async def process_zip(zip_path: Path, user_id: int, db: Session) -> Dict[str, Optional[str]]:
+async def process_zip(
+    zip_path: Path,
+    user_id: Optional[int] = None,
+    db: Optional[Session] = None,
+    conversation_id: Optional[str] = None,
+) -> Dict[str, Optional[str]]:
     """Main entry point used by FastAPI route or background worker."""
+    zip_path = Path(zip_path)
+    conversation_id = conversation_id or zip_path.stem
+
+    if user_id is None or db is None:
+        await set_status(conversation_id, "Configuração incompleta para processar o ZIP", 1.0)
+        return {
+            "status": "error",
+            "message": "user_id e db são obrigatórios para salvar conversa",
+        }
+
     if not (api_key := os.getenv("OPENAI_API_KEY")):
         raise RuntimeError("OPENAI_API_KEY not configured")
 
@@ -310,4 +336,4 @@ async def process_zip(zip_path: Path, user_id: int, db: Session) -> Dict[str, Op
         status_tracker=tracker,
     )
 
-    return await pipeline.execute(zip_path, user_id, db)
+    return await pipeline.execute(zip_path, user_id, db, conversation_id)

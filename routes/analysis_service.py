@@ -22,20 +22,80 @@ class AnalysisRequest(BaseModel):
     prompt_path: str
 
 
+def _extract_json_objects(buffer: str) -> tuple[list[dict], str]:
+    """Extract complete top-level JSON objects from a text buffer."""
+    objects: list[dict] = []
+    depth = 0
+    start_idx = -1
+    in_string = False
+    escape = False
+
+    for index, char in enumerate(buffer):
+        if in_string:
+            if escape:
+                escape = False
+            elif char == "\\":
+                escape = True
+            elif char == '"':
+                in_string = False
+            continue
+
+        if char == '"':
+            in_string = True
+            continue
+
+        if char == "{":
+            if depth == 0:
+                start_idx = index
+            depth += 1
+        elif char == "}":
+            if depth > 0:
+                depth -= 1
+                if depth == 0 and start_idx != -1:
+                    candidate = buffer[start_idx:index + 1]
+                    try:
+                        parsed = json.loads(candidate)
+                        if isinstance(parsed, dict):
+                            objects.append(parsed)
+                    except json.JSONDecodeError:
+                        pass
+                    start_idx = -1
+
+    remainder = ""
+    if depth > 0 and start_idx != -1:
+        remainder = buffer[start_idx:]
+
+    return objects, remainder
+
+
 async def event_generator(db: Session, conversation_id: UUID, prompt_path: Path):
-    """Generate SSE events from streaming analysis and save result as message."""
+    """Generate SSE events from structured JSON sections and save final result as message."""
     try:
-        # Collect all chunks while streaming
-        full_response = []
+        chunk_buffer = ""
+        section_payloads: list[dict] = []
+
         async for chunk in send_analysis_prompt(db, conversation_id, prompt_path):
-            full_response.append(chunk)
-            yield f"data: {json.dumps({'content': chunk})}\n\n"
-        
-        # Concatenate all chunks
-        response_text = "".join(full_response)
-        
-        if not response_text:
-            raise RuntimeError("Empty AI response")
+            chunk_buffer += chunk
+
+            parsed_objects, chunk_buffer = _extract_json_objects(chunk_buffer)
+
+            for section_obj in parsed_objects:
+                section_name = section_obj.get("section")
+                if section_name == "done":
+                    continue
+
+                if not all(key in section_obj for key in ("section", "title", "content")):
+                    continue
+
+                section_payloads.append(section_obj)
+                yield f"event: section\ndata: {json.dumps(section_obj, ensure_ascii=False)}\n\n"
+
+        if not section_payloads:
+            raise RuntimeError("Empty or invalid structured AI response")
+
+        response_text = "\n\n".join(
+            f"## {item['title']}\n{item['content']}" for item in section_payloads
+        )
         
         # Save the complete response as a message in the conversation
         saved_message = create_message(
@@ -49,7 +109,8 @@ async def event_generator(db: Session, conversation_id: UUID, prompt_path: Path)
         completion_data = {
             "status": "completed",
             "message_id": str(saved_message.id),
-            "message_length": len(response_text)
+            "message_length": len(response_text),
+            "sections": [item["section"] for item in section_payloads],
         }
         yield f"event: done\ndata: {json.dumps(completion_data)}\n\n"
         
