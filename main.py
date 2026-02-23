@@ -22,6 +22,7 @@ from datetime import datetime
 import sys
 import os
 from services.db_handler import init_db
+from scripts.db.ensure_sales_db import ensure_sales_db
 
 # Import routers
 from routes import sales_upload, report_service, status_service, auth, analysis_service, conversation_service
@@ -51,6 +52,11 @@ async def lifespan(app: FastAPI):
     # Startup - usando texto simples para evitar problemas de Unicode
     logging.info("Starting AI Chat & Sales Analyzer API...")
     logging.info("Initializing services...")
+    db_created = ensure_sales_db()
+    if db_created:
+        logging.info("sales.db created")
+    else:
+        logging.info("sales.db already exists")
     init_db()
     logging.info("Database initialized")
     
@@ -65,6 +71,7 @@ async def lifespan(app: FastAPI):
 # ==============================================================
 
 app = FastAPI(
+    lifespan=lifespan,
     title="IA Chat & Sales Analyzer API",
     description=(
         "Intelligent backend that automates the extraction, transcription, "
