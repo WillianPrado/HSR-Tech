@@ -4,7 +4,7 @@ from fastapi import HTTPException, status
 from sqlalchemy.orm import Session
 from sqlalchemy.exc import SQLAlchemyError
 from models.user import User, UserStatusEnum, SubscriptionPlanEnum
-from schemas.schemas import UserCreate
+from schemas.user import UserCreate
 from core.auth import get_password_hash, verify_password
 
 def get_user_by_email(db: Session, email: str) -> User | None:

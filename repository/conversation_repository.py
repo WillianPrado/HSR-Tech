@@ -8,6 +8,7 @@ from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session
 
 from models.conversation import Conversation
+from schemas.conversation import ConversationSummary
 
 logger = logging.getLogger(__name__)
 
@@ -91,7 +92,7 @@ def list_conversation_summaries_by_user(
     user_id: int,
     skip: int = 0,
     limit: int = 50,
-) -> list[dict[str, Any]]:
+) -> list[ConversationSummary]:
     """List lightweight conversation summaries selecting only required columns."""
     safe_limit = max(1, min(limit, 200))
     safe_skip = max(0, skip)
@@ -112,12 +113,12 @@ def list_conversation_summaries_by_user(
         )
 
         return [
-            {
-                "id": str(row.id),
-                "title": row.title,
-                "created_at": row.created_at.isoformat() if row.created_at else None,
-                "updated_at": row.updated_at.isoformat() if row.updated_at else None,
-            }
+            ConversationSummary(
+                id=str(row.id),
+                title=row.title,
+                created_at=row.created_at.isoformat() if row.created_at else None,
+                updated_at=row.updated_at.isoformat() if row.updated_at else None,
+            )
             for row in rows
         ]
     except SQLAlchemyError:

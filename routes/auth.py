@@ -8,7 +8,8 @@ from slowapi.util import get_remote_address
 
 from models.user import User
 from services.db_handler import get_db
-from schemas.schemas import UserCreate, UserResponse, Token
+from schemas.auth import Token
+from schemas.user import UserCreate, UserResponse
 from repository.user_repository import create_user, authenticate_user, get_user_by_email
 from core.auth import create_access_token, create_refresh_token
 from core.dependencies import get_current_active_user
