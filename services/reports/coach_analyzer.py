@@ -7,6 +7,7 @@ from uuid import UUID
 from anyio import Path
 from mysqlx import Session
 
+from repository.message_repository import create_message
 from repository.conversation_repository import get_conversation_by_id
 from services.reports.deepseek_client import DeepSeekClient
 from services.reports.pdf_utils import PDFGeneratorService
@@ -152,6 +153,15 @@ async def send_analysis_prompt(db: Session, conversation_id: UUID, prompt_path: 
         raise RuntimeError(f"Error preparing prompt: {e}")
     
     prompt_message = combine_prompt_and_chat(prompt, conversation.transcript if conversation else "")
+    # Save the first prompt message for chat system
+    if conversation and conversation.id:
+        create_message(
+            db,
+            conversation_id=conversation.id,
+            role="system",
+            content=prompt_message
+        )
+    
     
     received_any_chunk = False
     async for chunk in deepseek_client.stream_message(prompt_message):

@@ -1,4 +1,6 @@
+import asyncio
 import logging
+from typing import Optional
 from fastapi import APIRouter, HTTPException, Depends
 from fastapi.responses import StreamingResponse
 from uuid import UUID
@@ -6,10 +8,11 @@ from pathlib import Path
 from sqlalchemy.orm import Session
 import json
 from pydantic import BaseModel
+from services.reports.deepseek_client import DeepSeekClient
 
 from services.reports.coach_analyzer import send_analysis_prompt
 from repository.message_repository import create_message
-from repository.conversation_repository import get_conversation_by_id
+from repository.conversation_repository import conversation_payload_for_ia, get_conversation_by_id, create_conversation
 from core.dependencies import get_db
 
 logger = logging.getLogger(__name__)
@@ -20,6 +23,20 @@ class AnalysisRequest(BaseModel):
     """Request body for streaming analysis."""
     conversation_id: str
     prompt_path: str
+
+
+class StartConversationRequest(BaseModel):
+    user_id: int
+    initial_prompt: str
+    transcript: str | None = None
+    audio_path: str | None = None
+
+
+class ContinueConversationRequest(BaseModel):
+    conversation_id: str
+    prompt: str
+    transcript: str | None = None
+    audio_path: str | None = None
 
 
 def _extract_json_objects(buffer: str) -> tuple[list[dict], str]:
@@ -177,7 +194,6 @@ async def stream_message_analysis(
         logger.error(f"Error in stream_message_analysis: {e}")
         raise HTTPException(status_code=500, detail="Internal server error")
 
-
 @router.get("/conversations/{conversation_id}/messages")
 async def get_conversation_messages(
     conversation_id: str,
@@ -215,14 +231,15 @@ async def get_conversation_messages(
         # Import here to avoid circular imports
         from repository.message_repository import list_messages_by_conversation
         
-        # Get all messages
-        messages = list_messages_by_conversation(
-            db,
-            conversation_uuid,
-            skip=skip,
-            limit=limit
-        )
-        
+        # Get all messages, excluding 'system' role
+        messages = [
+            msg for msg in list_messages_by_conversation(
+                db,
+                conversation_uuid,
+                skip=skip,
+                limit=limit
+            ) if msg.role != "system"
+        ]
         return {
             "conversation_id": str(conversation_uuid),
             "conversation_title": conversation.title,
@@ -244,4 +261,79 @@ async def get_conversation_messages(
         raise
     except Exception as e:
         logger.error(f"Error in get_conversation_messages: {e}")
+        raise HTTPException(status_code=500, detail="Internal server error")
+
+
+
+def load_file_sync(path: Path) -> Optional[str]:
+    """Synchronously reads a file (wrapped later in asyncio.to_thread)."""
+    try:
+        with open(path, 'r', encoding='utf-8') as file:
+            return file.read()
+    except Exception as e:
+        logger.error(f"❌ Error reading file '{path}': {e}")
+        return None
+    
+@router.post("/conversations/continue")
+async def continue_conversation(
+    request: ContinueConversationRequest,
+    db: Session = Depends(get_db)
+):
+    """
+    Continue an existing conversation by adding a new user message and optional transcript/audio.
+    """
+    try:
+        # Validate conversation_id
+        try:
+            conversation_uuid = UUID(request.conversation_id)
+        except ValueError:
+            raise HTTPException(status_code=400, detail="Invalid conversation_id format. Must be a valid UUID.")
+
+        conversation = get_conversation_by_id(db, conversation_uuid)
+        if not conversation:
+            raise HTTPException(status_code=404, detail=f"Conversation not found: {request.conversation_id}")
+
+         
+        # Add new user message
+        create_message(
+            db,
+            conversation_id=conversation.id,
+            role="user",
+            content=request.prompt
+        )
+        # Get messages excluding 'system' role
+        conversation_payload = conversation_payload_for_ia(db, conversation.id, not_system=True)
+        messages = [
+            {
+                "role": msg["role"],
+                "content": msg["content"]
+            }
+            for msg in conversation_payload.get("messages", [])
+        ]
+        deepseek_client = DeepSeekClient()
+        # Return streaming response to frontend and save AI response to DB
+        async def ai_stream_and_save():
+            ai_response = ""
+            async for chunk in deepseek_client.stream_messages(messages):
+                ai_response += chunk
+                yield chunk
+            # Save the complete AI response as a message
+            create_message(
+                db,
+                conversation_id=conversation.id,
+                role="assistant",
+                content=ai_response
+            )
+        return StreamingResponse(
+            ai_stream_and_save(),
+            media_type="text/event-stream",
+            headers={
+                "Cache-Control": "no-cache",
+                "X-Accel-Buffering": "no",
+            }
+        )
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error continuing conversation: {e}")
         raise HTTPException(status_code=500, detail="Internal server error")

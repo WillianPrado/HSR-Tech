@@ -109,7 +109,7 @@ class DeepSeekClient:
         payload = {
             "model": model,
             "messages": [
-                {"role": "user", "content": message}
+                {"role": "system", "content": message}
             ],
             "stream": True
         }
@@ -156,6 +156,61 @@ class DeepSeekClient:
             logger.error(f"Network error during streaming: {e}")
             raise RuntimeError(f"Network error: {e}")
 
+        except Exception as e:
+            logger.exception(f"Unexpected error during streaming: {e}")
+            raise RuntimeError(f"Streaming error: {e}")
+
+    async def stream_messages(self, messages: list[dict], model: str = "deepseek-reasoner") -> AsyncGenerator[str, None]:
+        """
+        Streams a list of messages to the DeepSeek API and yields response chunks progressively.
+        Args:
+            messages (list[dict]): List of message dicts with 'role' and 'content'.
+            model (str): Model identifier. Defaults to 'deepseek-reasoner'.
+        Yields:
+            str: Text chunks as they arrive from the API.
+        Raises:
+            RuntimeError: If the API response is invalid or streaming fails.
+        """
+        headers = {
+            "Authorization": f"Bearer {self.api_key}",
+            "Content-Type": "application/json",
+        }
+        payload = {
+            "model": model,
+            "messages": messages,
+            "stream": True
+        }
+        try:
+            async with aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=self.timeout)) as session:
+                async with session.post(self.BASE_URL, headers=headers, json=payload) as response:
+                    if response.status == 200:
+                        async for line in response.content:
+                            line = line.decode('utf-8').strip()
+                            if not line or line == "[DONE]":
+                                continue
+                            if line.startswith("data: "):
+                                try:
+                                    json_str = line[6:]
+                                    chunk = json.loads(json_str)
+                                    choices = chunk.get("choices", [])
+                                    if choices and len(choices) > 0:
+                                        delta = choices[0].get("delta", {})
+                                        content = delta.get("content")
+                                        if content:
+                                            yield content
+                                except json.JSONDecodeError:
+                                    logger.warning(f"Failed to parse JSON chunk: {line}")
+                                    continue
+                    else:
+                        error_text = await response.text()
+                        logger.error(f"DeepSeek streaming error {response.status}: {error_text}")
+                        raise RuntimeError(f"API error {response.status}: {error_text}")
+        except asyncio.TimeoutError:
+            logger.error("DeepSeek streaming request timed out.")
+            raise RuntimeError("Request timed out")
+        except aiohttp.ClientError as e:
+            logger.error(f"Network error during streaming: {e}")
+            raise RuntimeError(f"Network error: {e}")
         except Exception as e:
             logger.exception(f"Unexpected error during streaming: {e}")
             raise RuntimeError(f"Streaming error: {e}")

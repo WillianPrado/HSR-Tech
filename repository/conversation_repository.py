@@ -200,3 +200,39 @@ def delete_conversation(db: Session, conversation_id: UUID) -> bool:
         db.rollback()
         logger.exception("Database error while deleting conversation")
         raise
+
+
+def conversation_payload_for_ia(
+    db: Session, conversation_id: UUID, not_system: bool = False
+) -> dict[str, Any]:
+    """
+    Build a payload for IA API containing conversation details and all messages.
+    If not_system is True, exclude messages with role 'system'.
+    """
+    from repository.message_repository import list_messages_by_conversation
+
+    conversation = get_conversation_by_id(db, conversation_id)
+    if not conversation:
+        return {}
+    messages = list_messages_by_conversation(db, conversation_id)
+    if not_system:
+        messages = [msg for msg in messages if msg.role != "system"]
+    return {
+        "id": str(conversation.id),
+        "user_id": conversation.user_id,
+        "title": conversation.title,
+        "transcript": conversation.transcript,
+        "analysis": conversation.analysis,
+        "audio_path": conversation.audio_path,
+        "created_at": conversation.created_at.isoformat() if conversation.created_at else None,
+        "updated_at": conversation.updated_at.isoformat() if conversation.updated_at else None,
+        "messages": [
+            {
+                "id": str(msg.id),
+                "role": msg.role,
+                "content": msg.content,
+                "created_at": msg.created_at.isoformat() if msg.created_at else None
+            }
+            for msg in messages
+        ]
+    }
