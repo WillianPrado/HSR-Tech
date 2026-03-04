@@ -1,5 +1,6 @@
 import asyncio
 import logging
+import os
 from typing import Optional
 from fastapi import APIRouter, HTTPException, Depends
 from fastapi.responses import StreamingResponse
@@ -8,10 +9,19 @@ from pathlib import Path
 from sqlalchemy.orm import Session
 from pydantic import BaseModel
 from services.reports.llm_factory import get_llm_client
+from services.chat.conversation_title_service import (
+    should_update_conversation_title,
+    suggest_conversation_title,
+)
 
 from services.reports.coach_analyzer import send_analysis_prompt
 from repository.message_repository import create_message
-from repository.conversation_repository import conversation_payload_for_ia, get_conversation_by_id, create_conversation
+from repository.conversation_repository import (
+    conversation_payload_for_ia,
+    get_conversation_by_id,
+    create_conversation,
+    update_conversation,
+)
 from core.dependencies import get_db
 
 logger = logging.getLogger(__name__)
@@ -61,6 +71,16 @@ async def analysis_stream_and_save(db: Session, conversation_id: UUID, prompt_pa
 
         if not received_any_chunk:
             raise RuntimeError("Empty AI streaming response")
+
+        conversation = get_conversation_by_id(db, conversation_id)
+        if conversation and should_update_conversation_title(conversation.title):
+            title_mode = os.getenv("TITLE_GENERATION_MODE", "hybrid").strip().lower()
+            title_client = get_llm_client("deepseek") if title_mode in {"hybrid", "llm"} else None
+            source_text = ai_response.strip()
+            if source_text:
+                title = await suggest_conversation_title(source_text[:2000], llm_client=title_client)
+                if title:
+                    update_conversation(db, conversation_id, {"title": title})
         
         # Save the complete response as a message in the conversation
         create_message(
@@ -206,8 +226,8 @@ def load_file_sync(path: Path) -> Optional[str]:
             return file.read()
     except Exception as e:
         logger.error(f"❌ Error reading file '{path}': {e}")
-        return None
-  
+        return None 
+    
 @router.post("/conversations/continue")
 async def continue_conversation(
     request: ContinueConversationRequest,
@@ -227,15 +247,13 @@ async def continue_conversation(
         conversation = get_conversation_by_id(db, conversation_uuid)
         if not conversation:
             raise HTTPException(status_code=404, detail=f"Conversation not found: {request.conversation_id}")
-
         # Add new user message
         create_message(
             db,
             conversation_id=conversation.id,
             role="user",
             content=request.prompt
-        )
-        # Get messages excluding 'system' role
+        )        # Get messages excluding 'system' role
         conversation_payload = conversation_payload_for_ia(db, conversation.id, not_system=True)
         messages = [
             {

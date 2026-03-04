@@ -14,10 +14,11 @@ FORMATO MÍNIMO OBRIGATÓRIO
 
 Use este formato mínimo:
 - Título principal com #
-- Seções com subtítulos em negrito (ex: **resumo_executivo**)
+- Seções com subtítulos em negrito (ex: **Resumo Executivo**)
 - Listas com '-'
 - Sem bloco de código
 - Se citar datas, use ISO-8601 quando possível
+- Não usar '_' em nenhum título ou subtítulo
 
 REGRAS DE CONTEÚDO
 
@@ -37,19 +38,25 @@ Emojis permitidos apenas:
 
 ORDEM OBRIGATÓRIA DAS SEÇÕES
 
-resumo_executivo
-score_comercial
-evidencias
-oportunidades_riscos
-tecnicas_nao_usadas
-plano_recuperacao
-mensagens_prontas
-checklist_final
-conclusao_motivacional
+1) Resumo executivo
+2) Score comercial
+3) Evidências
+4) Oportunidades e riscos
+5) Análise DISC do cliente
+6) Gatilhos mentais não utilizados
+7) Plano de recuperação
+8) Mensagens prontas
+9) Checklist final
+10) Conclusão motivacional
+
+Regra dos títulos das seções:
+- A IA pode escolher o texto exato dos títulos (mais natural e legível)
+- Deve manter a mesma ordem lógica acima
+- Não usar '_' nos títulos
 
 DETALHAMENTO DE CADA SEÇÃO
 
-resumo_executivo
+Resumo executivo
 - Diagnóstico geral
 - Probabilidade de fechamento (Alta/Média/Baixa + justificativa)
 - Principal gargalo
@@ -57,7 +64,7 @@ resumo_executivo
 - Ação imediata
 - Evite
 
-score_comercial
+Score comercial
 Notas de 0 a 10 + justificativa curta para:
 - Conexão e rapport
 - Descoberta de dor
@@ -66,36 +73,43 @@ Notas de 0 a 10 + justificativa curta para:
 - Condução para fechamento
 - Nota final + leitura da nota
 
-evidencias
+Evidências
 - 4 a 8 bullets no formato:
 "Trecho da conversa" → interpretação prática
 
-oportunidades_riscos
+Oportunidades e riscos
 - 🚀 Top 3 oportunidades
 - ⚠️ Top 3 riscos
 
-tecnicas_nao_usadas
-Mínimo 3 técnicas, cada uma com:
+Análise DISC do cliente
+- Identificar perfil DISC predominante do cliente (D, I, S ou C) com justificativa objetiva
+- Citar 3 evidências curtas da conversa que sustentam o perfil
+- Como o vendedor deve adaptar abordagem (tom, velocidade, nível de detalhe e CTA)
+- O que evitar com esse perfil
+- 2 mensagens práticas para WhatsApp (uma de avanço e uma de follow-up) usando o perfil ao favor do vendedor
+
+Gatilhos mentais não utilizados
+Mínimo 3 gatilhos pertinentes ao consorcio, cada uma com:
 - Nome
 - Quando usar
 - Mensagem pronta curta
 
-plano_recuperacao
+Plano de recuperação
 - Plano em 24h
 - Plano em 7 dias
 - Plano em 30 dias
 
-mensagens_prontas
+Mensagens prontas
 3 versões:
 - Reabertura suave
 - Quebra de objeção
 - CTA final
 Máximo 350 caracteres por mensagem
 
-checklist_final
+Checklist final
 - Checklist objetivo e acionável
 
-conclusao_motivacional
+Conclusão motivacional
 - Máximo 3 linhas
 - Direta e energética
 
