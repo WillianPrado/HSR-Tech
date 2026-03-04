@@ -10,6 +10,15 @@ Não use objetos com campos section/title/content.
 Não envie marcadores de controle como {"section":"done"}.
 Apenas gere o relatório final em Markdown, na ordem pedida abaixo.
 
+FORMATO MÍNIMO OBRIGATÓRIO
+
+Use este formato mínimo:
+- Título principal com #
+- Seções com subtítulos em negrito (ex: **resumo_executivo**)
+- Listas com '-'
+- Sem bloco de código
+- Se citar datas, use ISO-8601 quando possível
+
 REGRAS DE CONTEÚDO
 
 Responder em português do Brasil.

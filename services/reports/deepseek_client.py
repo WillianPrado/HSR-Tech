@@ -32,7 +32,12 @@ class DeepSeekClient:
         if not self.api_key:
             raise EnvironmentError("Missing environment variable: DEEP_SEEK_API_KEY")
 
-    async def send_message(self, message: str, model: str = "deepseek-reasoner") -> Optional[str]:
+    async def send_message(
+        self,
+        message: str,
+        model: str = "deepseek-reasoner",
+        response_format: Optional[dict] = None,
+    ) -> Optional[str]:
         """
         Sends a message to the DeepSeek API and returns the complete model response.
         For streaming responses, use stream_message() instead.
@@ -56,6 +61,8 @@ class DeepSeekClient:
             ],
             "stream": False
         }
+        if response_format:
+            payload["response_format"] = response_format
 
         try:
             # Using aiohttp for non-blocking async HTTP requests
@@ -87,7 +94,12 @@ class DeepSeekClient:
             logger.exception(f"Unexpected error during DeepSeek API call: {e}")
             return None
 
-    async def stream_message(self, message: str, model: str = "deepseek-reasoner") -> AsyncGenerator[str, None]:
+    async def stream_message(
+        self,
+        message: str,
+        model: str = "deepseek-reasoner",
+        response_format: Optional[dict] = None,
+    ) -> AsyncGenerator[str, None]:
         """
         Streams a message to the DeepSeek API and yields response chunks progressively.
         
@@ -113,6 +125,8 @@ class DeepSeekClient:
             ],
             "stream": True
         }
+        if response_format:
+            payload["response_format"] = response_format
 
         try:
             async with aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=self.timeout)) as session:
@@ -160,7 +174,12 @@ class DeepSeekClient:
             logger.exception(f"Unexpected error during streaming: {e}")
             raise RuntimeError(f"Streaming error: {e}")
 
-    async def stream_messages(self, messages: list[dict], model: str = "deepseek-reasoner") -> AsyncGenerator[str, None]:
+    async def stream_messages(
+        self,
+        messages: list[dict],
+        model: str = "deepseek-reasoner",
+        response_format: Optional[dict] = None,
+    ) -> AsyncGenerator[str, None]:
         """
         Streams a list of messages to the DeepSeek API and yields response chunks progressively.
         Args:
@@ -180,6 +199,8 @@ class DeepSeekClient:
             "messages": messages,
             "stream": True
         }
+        if response_format:
+            payload["response_format"] = response_format
         try:
             async with aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=self.timeout)) as session:
                 async with session.post(self.BASE_URL, headers=headers, json=payload) as response:

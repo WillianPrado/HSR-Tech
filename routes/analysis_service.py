@@ -17,6 +17,14 @@ from core.dependencies import get_db
 logger = logging.getLogger(__name__)
 router = APIRouter(tags=["Analysis"])
 
+CONTINUE_CONVERSATION_SYSTEM_INSTRUCTION = (
+    "Você é um analista comercial especializado em consórcio. "
+    "Responda sempre em Markdown válido e estruturado, sem bloco de código. "
+    "Use este formato mínimo: "
+    "# Título; seções com subtítulos em negrito (**secao**); listas com '-' quando aplicável. "
+    "Se citar datas, use ISO-8601 quando possível."
+)
+
 
 class AnalysisRequest(BaseModel):
     """Request body for streaming analysis."""
@@ -236,6 +244,15 @@ async def continue_conversation(
             }
             for msg in conversation_payload.get("messages", [])
         ]
+
+        messages = [
+            {
+                "role": "system",
+                "content": CONTINUE_CONVERSATION_SYSTEM_INSTRUCTION,
+            },
+            *messages,
+        ]
+
         deepseek_client = DeepSeekClient()
 
         async def ai_stream_and_save():
