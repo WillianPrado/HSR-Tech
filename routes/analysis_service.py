@@ -6,7 +6,6 @@ from fastapi.responses import StreamingResponse
 from uuid import UUID
 from pathlib import Path
 from sqlalchemy.orm import Session
-import json
 from pydantic import BaseModel
 from services.reports.deepseek_client import DeepSeekClient
 
@@ -39,103 +38,36 @@ class ContinueConversationRequest(BaseModel):
     audio_path: str | None = None
 
 
-def _extract_json_objects(buffer: str) -> tuple[list[dict], str]:
-    """Extract complete top-level JSON objects from a text buffer."""
-    objects: list[dict] = []
-    depth = 0
-    start_idx = -1
-    in_string = False
-    escape = False
-
-    for index, char in enumerate(buffer):
-        if in_string:
-            if escape:
-                escape = False
-            elif char == "\\":
-                escape = True
-            elif char == '"':
-                in_string = False
-            continue
-
-        if char == '"':
-            in_string = True
-            continue
-
-        if char == "{":
-            if depth == 0:
-                start_idx = index
-            depth += 1
-        elif char == "}":
-            if depth > 0:
-                depth -= 1
-                if depth == 0 and start_idx != -1:
-                    candidate = buffer[start_idx:index + 1]
-                    try:
-                        parsed = json.loads(candidate)
-                        if isinstance(parsed, dict):
-                            objects.append(parsed)
-                    except json.JSONDecodeError:
-                        pass
-                    start_idx = -1
-
-    remainder = ""
-    if depth > 0 and start_idx != -1:
-        remainder = buffer[start_idx:]
-
-    return objects, remainder
-
-
-async def event_generator(db: Session, conversation_id: UUID, prompt_path: Path):
-    """Generate SSE events from structured JSON sections and save final result as message."""
+async def analysis_stream_and_save(db: Session, conversation_id: UUID, prompt_path: Path):
+    """Stream analysis text progressively and save final assistant message."""
     try:
-        chunk_buffer = ""
-        section_payloads: list[dict] = []
+        ai_response = ""
+        received_any_chunk = False
 
         async for chunk in send_analysis_prompt(db, conversation_id, prompt_path):
-            chunk_buffer += chunk
+            received_any_chunk = True
+            ai_response += chunk
+            for char in chunk:
+                yield char
+                await asyncio.sleep(0.01)
 
-            parsed_objects, chunk_buffer = _extract_json_objects(chunk_buffer)
-
-            for section_obj in parsed_objects:
-                section_name = section_obj.get("section")
-                if section_name == "done":
-                    continue
-
-                if not all(key in section_obj for key in ("section", "title", "content")):
-                    continue
-
-                section_payloads.append(section_obj)
-                yield f"event: section\ndata: {json.dumps(section_obj, ensure_ascii=False)}\n\n"
-
-        if not section_payloads:
-            raise RuntimeError("Empty or invalid structured AI response")
-
-        response_text = "\n\n".join(
-            f"## {item['title']}\n{item['content']}" for item in section_payloads
-        )
+        if not received_any_chunk:
+            raise RuntimeError("Empty AI streaming response")
         
         # Save the complete response as a message in the conversation
-        saved_message = create_message(
+        create_message(
             db,
             conversation_id=conversation_id,
             role="assistant",
-            content=response_text
+            content=ai_response
         )
         
-        # Send completion event with saved message details
-        completion_data = {
-            "status": "completed",
-            "message_id": str(saved_message.id),
-            "message_length": len(response_text),
-            "sections": [item["section"] for item in section_payloads],
-        }
-        yield f"event: done\ndata: {json.dumps(completion_data)}\n\n"
-        
     except RuntimeError as e:
-        yield f"event: error\ndata: {json.dumps({'error': str(e)})}\n\n"
+        logger.error(f"Streaming analysis runtime error: {e}")
+        yield f"\n\n[ERRO] {str(e)}"
     except Exception as e:
         logger.exception(f"Streaming analysis error: {e}")
-        yield f"event: error\ndata: {json.dumps({'error': 'Unexpected error during analysis'})}\n\n"
+        yield "\n\n[ERRO] Unexpected error during analysis"
 
 
 @router.post("/analysis/stream")
@@ -144,19 +76,13 @@ async def stream_message_analysis(
     db: Session = Depends(get_db)
 ):
     """
-    Stream AI analysis for a conversation and automatically save the response.
-    
-    The streamed response is collected and saved as an 'assistant' message 
-    in the specified conversation after streaming completes.
+    Stream AI analysis for a conversation and save the final response.
     
     Args:
         request: AnalysisRequest with conversation_id and prompt_path
         
     Returns:
-        Server-Sent Events stream with:
-        - data events: Analysis chunks with JSON payload {"content": "..."}
-        - done event: Completion summary with saved message ID
-        - error event: Error details if analysis fails
+        StreamingResponse with incremental text chunks.
         
     Raises:
         HTTPException: 400 if conversation_id is not a valid UUID
@@ -180,7 +106,7 @@ async def stream_message_analysis(
             raise HTTPException(status_code=404, detail=f"Prompt file not found: {request.prompt_path}")
         
         return StreamingResponse(
-            event_generator(db, conversation_uuid, prompt_file),
+            analysis_stream_and_save(db, conversation_uuid, prompt_file),
             media_type="text/event-stream",
             headers={
                 "Cache-Control": "no-cache",
