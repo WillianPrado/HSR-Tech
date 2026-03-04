@@ -201,35 +201,54 @@ class ZipProcessingPipeline:
     # -----------------------------------------------------------------
     async def _process_audios(self, audio_dict: Dict[str, Path], conversation_id: str) -> Dict[str, str]:
         """Runs concurrent transcription of all audio files."""
-        await self.tracker.update(conversation_id, "Processando áudios", 0.3)
+        total_audios = len(audio_dict)
+        await self.tracker.update(conversation_id, f"Processando áudios (0/{total_audios})", 0.3)
 
         if not audio_dict:
             logger.info("No audio files detected in ZIP.")
             return {}
 
         semaphore = asyncio.Semaphore(self.max_concurrent_transcriptions)
-        tasks = []
-        for i, (audio_name, audio_path) in enumerate(audio_dict.items()):
-            progress = 0.3 + (i / max(len(audio_dict), 1)) * 0.6
-            tasks.append(
-                self._process_single_audio(
+
+        async def _transcribe_with_name(
+            audio_name: str,
+            audio_path: Path,
+            progress: float,
+        ):
+            try:
+                text = await self._process_single_audio(
                     audio_name,
                     audio_path,
                     conversation_id,
                     progress,
                     semaphore,
                 )
-            )
+                return audio_name, text, None
+            except Exception as error:
+                return audio_name, None, error
 
-        results = await asyncio.gather(*tasks, return_exceptions=True)
+        tasks = []
+        for i, (audio_name, audio_path) in enumerate(audio_dict.items()):
+            progress = 0.3 + (i / max(len(audio_dict), 1)) * 0.6
+            tasks.append(asyncio.create_task(_transcribe_with_name(audio_name, audio_path, progress)))
 
         transcriptions: Dict[str, str] = {}
-        for audio_name, result in zip(audio_dict.keys(), results):
-            if isinstance(result, Exception):
-                logger.error(f"Error processing {audio_name}: {result}")
-                transcriptions[audio_name] = f"[ERRO: {result}]"
+        processed_count = 0
+        for task in asyncio.as_completed(tasks):
+            audio_name, transcription, error = await task
+            processed_count += 1
+            progress = 0.3 + (processed_count / max(total_audios, 1)) * 0.6
+            await self.tracker.update(
+                conversation_id,
+                f"Áudios transcritos: {processed_count}/{total_audios}",
+                progress,
+            )
+
+            if error is not None:
+                logger.error(f"Error processing {audio_name}: {error}")
+                transcriptions[audio_name] = f"[ERRO: {error}]"
             else:
-                transcriptions[audio_name] = result
+                transcriptions[audio_name] = transcription
 
         return transcriptions
 
@@ -243,8 +262,6 @@ class ZipProcessingPipeline:
         semaphore: asyncio.Semaphore,
     ) -> str:
         """Transcribes a single audio file with progress feedback."""
-        await self.tracker.update(conversation_id, f"Transcrevendo {audio_name}", progress)
-
         try:
             async with semaphore:
                 return await self.transcriber.transcribe(audio_path)

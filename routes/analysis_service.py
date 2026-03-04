@@ -273,7 +273,7 @@ def load_file_sync(path: Path) -> Optional[str]:
     except Exception as e:
         logger.error(f"❌ Error reading file '{path}': {e}")
         return None
-    
+  
 @router.post("/conversations/continue")
 async def continue_conversation(
     request: ContinueConversationRequest,
@@ -281,6 +281,7 @@ async def continue_conversation(
 ):
     """
     Continue an existing conversation by adding a new user message and optional transcript/audio.
+    Streams the AI response letter-by-letter for real-time frontend updates.
     """
     try:
         # Validate conversation_id
@@ -293,7 +294,6 @@ async def continue_conversation(
         if not conversation:
             raise HTTPException(status_code=404, detail=f"Conversation not found: {request.conversation_id}")
 
-         
         # Add new user message
         create_message(
             db,
@@ -311,19 +311,21 @@ async def continue_conversation(
             for msg in conversation_payload.get("messages", [])
         ]
         deepseek_client = DeepSeekClient()
-        # Return streaming response to frontend and save AI response to DB
+
         async def ai_stream_and_save():
             ai_response = ""
             async for chunk in deepseek_client.stream_messages(messages):
                 ai_response += chunk
-                yield chunk
-            # Save the complete AI response as a message
+                for char in chunk:
+                    yield char
+                    await asyncio.sleep(0.01)  # Force flush for each char
             create_message(
                 db,
                 conversation_id=conversation.id,
                 role="assistant",
                 content=ai_response
             )
+
         return StreamingResponse(
             ai_stream_and_save(),
             media_type="text/event-stream",
