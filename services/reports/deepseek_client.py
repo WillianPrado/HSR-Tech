@@ -5,9 +5,11 @@ import asyncio
 import json
 from typing import Optional, AsyncGenerator
 
+from core.abstractions.illm_client import ILLMClient, ChatMessage
+
 logger = logging.getLogger(__name__)
 
-class DeepSeekClient:
+class DeepSeekClient(ILLMClient):
     """
     Asynchronous client for interacting with the DeepSeek API.
 
@@ -176,7 +178,7 @@ class DeepSeekClient:
 
     async def stream_messages(
         self,
-        messages: list[dict],
+        messages: list[ChatMessage],
         model: str = "deepseek-reasoner",
         response_format: Optional[dict] = None,
     ) -> AsyncGenerator[str, None]:
@@ -235,3 +237,6 @@ class DeepSeekClient:
         except Exception as e:
             logger.exception(f"Unexpected error during streaming: {e}")
             raise RuntimeError(f"Streaming error: {e}")
+
+    async def close(self) -> None:
+        return None

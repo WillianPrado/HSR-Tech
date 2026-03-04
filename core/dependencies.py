@@ -7,7 +7,8 @@ from core.http.async_http_client import AsyncHTTPClient
 from services.db_handler import get_db
 from core.auth import verify_token
 from models.user import User
-from services.reports.deepseek_client import DeepSeekClient
+from core.abstractions.illm_client import ILLMClient
+from services.reports.llm_factory import get_llm_client as build_llm_client
 from services.audio.openai_transcriber import OpenAITranscriber
 
 
@@ -20,11 +21,11 @@ async def get_http_client() -> AsyncGenerator[AsyncHTTPClient, None]:
     finally:
         await client.close()
 
-async def get_llm_client() -> AsyncGenerator[DeepSeekClient, None]:
+async def get_llm_client() -> AsyncGenerator[ILLMClient, None]:
     """
-    Dependency that provides DeepSeekClient instance.
+    Dependency that provides a contract-based LLM client instance.
     """
-    client = DeepSeekClient()
+    client = build_llm_client('openai')
     try:
         yield client
     finally:

@@ -9,12 +9,12 @@ from mysqlx import Session
 
 from repository.message_repository import create_message
 from repository.conversation_repository import get_conversation_by_id
-from services.reports.deepseek_client import DeepSeekClient
+from services.reports.llm_factory import get_llm_client
 from services.reports.pdf_utils import PDFGeneratorService
 from core.status_tracker import set_status
 
 logger = logging.getLogger(__name__)
-deepseek_client = DeepSeekClient()
+llm_client = get_llm_client('openai')
 pdf_service = PDFGeneratorService()
 # ======================================================================
 # Abstract Interface for Tracking Progress
@@ -164,7 +164,7 @@ async def send_analysis_prompt(db: Session, conversation_id: UUID, prompt_path: 
     
     
     received_any_chunk = False
-    async for chunk in deepseek_client.stream_message(prompt_message):
+    async for chunk in llm_client.stream_message(prompt_message):
         received_any_chunk = True
         yield chunk
     
@@ -175,7 +175,7 @@ async def send_analysis_prompt(db: Session, conversation_id: UUID, prompt_path: 
 async def stream_analysis_prompt(prompt_message: str) -> AsyncGenerator[str, None]:
     """Stream AI response chunks from DeepSeek for live chat/front-end usage."""
     received_any_chunk = False
-    async for chunk in deepseek_client.stream_message(prompt_message):
+    async for chunk in llm_client.stream_message(prompt_message):
         received_any_chunk = True
         yield chunk
 
@@ -247,7 +247,7 @@ async def process_conversation_to_pdf(
         full_message = combine_prompt_and_chat(prompt, conversation)
         
         ai_response_chunks = []
-        async for chunk in deepseek_client.stream_message(full_message):
+        async for chunk in llm_client.stream_message(full_message):
             ai_response_chunks.append(chunk)
         
         ai_response = "".join(ai_response_chunks)

@@ -7,7 +7,7 @@ from uuid import UUID
 from pathlib import Path
 from sqlalchemy.orm import Session
 from pydantic import BaseModel
-from services.reports.deepseek_client import DeepSeekClient
+from services.reports.llm_factory import get_llm_client
 
 from services.reports.coach_analyzer import send_analysis_prompt
 from repository.message_repository import create_message
@@ -253,11 +253,11 @@ async def continue_conversation(
             *messages,
         ]
 
-        deepseek_client = DeepSeekClient()
+        llm_client = get_llm_client('openai')
 
         async def ai_stream_and_save():
             ai_response = ""
-            async for chunk in deepseek_client.stream_messages(messages):
+            async for chunk in llm_client.stream_messages(messages):
                 ai_response += chunk
                 for char in chunk:
                     yield char
