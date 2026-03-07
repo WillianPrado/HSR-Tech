@@ -46,6 +46,78 @@ Se houver erros na instalação:
 Verifique a versão do Python (recomendo 3.8+)
 
 
+## Stripe Setup (Pagamentos)
+
+### 1. Configurar variáveis de ambiente
+
+Use o arquivo `/.env.example` como base e preencha no seu `/.env`:
+
+- `STRIPE_PUBLIC_KEY`
+- `STRIPE_SECRET_KEY`
+- `STRIPE_WEBHOOK_SECRET`
+- `STRIPE_START_PRICE_ID`
+- `STRIPE_MEDIUM_PRICE_ID`
+- `STRIPE_PRO_PRICE_ID`
+- `PAYMENT_SUCCESS_URL`
+- `PAYMENT_CANCEL_URL`
+
+### 2. Criar produtos e precos no Stripe Dashboard
+
+No Stripe Dashboard:
+
+1. Crie os produtos/planos do sistema (basic, premium, enterprise).
+2. Copie os `price_id` gerados.
+3. Mapeie os IDs nas variaveis `STRIPE_*_PRICE_ID`.
+
+### 3. Registrar webhook no Stripe
+
+Crie um endpoint webhook apontando para:
+
+- `https://SEU_DOMINIO/api/v1/webhooks/stripe`
+
+Eventos minimos recomendados:
+
+- `checkout.session.completed`
+- `customer.subscription.created`
+- `customer.subscription.updated`
+- `customer.subscription.deleted`
+- `invoice.payment_succeeded`
+- `invoice.payment_failed`
+
+Copie o signing secret para `STRIPE_WEBHOOK_SECRET`.
+
+### 4. Endpoints de pagamento disponiveis
+
+- `GET /api/v1/payment/config`
+- `POST /api/v1/payment/checkout`
+- `GET /api/v1/payment/subscription`
+- `POST /api/v1/payment/update-subscription`
+- `POST /api/v1/payment/cancel-subscription`
+- `GET /api/v1/payment/invoices`
+- `POST /api/v1/webhooks/stripe`
+
+### 5. Teste local rapido (Stripe CLI)
+
+1. Inicie a API local.
+2. Encaminhe eventos para local:
+
+```bash
+stripe listen --forward-to localhost:8000/api/v1/webhooks/stripe
+```
+
+3. Dispare evento de teste:
+
+```bash
+stripe trigger checkout.session.completed
+```
+
+4. Valide no banco:
+
+- insercao em `payment_events`
+- atualizacao de assinatura em `users`
+- upsert em `invoices` (quando aplicavel)
+
+
 ## Migrações de Banco (Alembic)
 
 O projeto agora possui Alembic configurado com:

@@ -20,6 +20,14 @@ class StripeCheckoutResponse(BaseModel):
     session_id: str
 
 
+class StripePublicConfigResponse(BaseModel):
+    """Configuracao publica de Stripe consumida pelo frontend."""
+
+    stripe_public_key: str
+    payment_success_url: str
+    payment_cancel_url: str
+
+
 class StripeSubscriptionResponse(BaseModel):
     """Schema para resposta de assinatura"""
 

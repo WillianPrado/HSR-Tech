@@ -20,6 +20,7 @@ from schemas.stripe import (
     StripeCheckoutRequest,
     StripeCheckoutResponse,
     StripeInvoiceResponse,
+    StripePublicConfigResponse,
     StripeSubscriptionStatusResponse,
     StripeUpdateSubscriptionRequest,
 )
@@ -27,6 +28,15 @@ from services.db_handler import get_db
 from services.stripe.stripe_service import StripeService
 
 router = APIRouter(prefix="/payment", tags=["Payment"])
+
+
+@router.get("/config", response_model=StripePublicConfigResponse)
+def get_stripe_public_config() -> StripePublicConfigResponse:
+    return StripePublicConfigResponse(
+        stripe_public_key=settings.STRIPE_PUBLIC_KEY,
+        payment_success_url=settings.PAYMENT_SUCCESS_URL,
+        payment_cancel_url=settings.PAYMENT_CANCEL_URL,
+    )
 
 
 def _enum_value(value: Any) -> str:
