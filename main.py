@@ -25,7 +25,16 @@ from services.db_handler import init_db
 from scripts.db.ensure_sales_db import ensure_sales_db
 
 # Import routers
-from routes import sales_upload, report_service, status_service, auth, analysis_service, conversation_service
+from routes import (
+    sales_upload,
+    report_service,
+    status_service,
+    auth,
+    analysis_service,
+    conversation_service,
+    payment_service,
+    stripe_webhook,
+)
 
 # ==============================================================
 # UNICODE FIX FOR WINDOWS
@@ -270,6 +279,8 @@ app.include_router(status_service.router, prefix="/api/v1", tags=["Status"])
 app.include_router(auth.router, prefix="/api/v1", tags=["Authentication"])
 app.include_router(analysis_service.router, prefix="/api/v1", tags=["Analysis"])
 app.include_router(conversation_service.router, prefix="/api/v1", tags=["Conversations"])
+app.include_router(payment_service.router, prefix="/api/v1", tags=["Payment"])
+app.include_router(stripe_webhook.router, prefix="/api/v1", tags=["Payment"])
 
 # ==============================================================
 # LOGGING CONFIGURATION (UNICODE SAFE)

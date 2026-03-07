@@ -8,6 +8,7 @@ from uuid import UUID
 from pathlib import Path
 from sqlalchemy.orm import Session
 from pydantic import BaseModel
+from models.user import User
 from services.reports.llm_factory import get_llm_client
 from services.chat.conversation_title_service import (
     should_update_conversation_title,
@@ -22,7 +23,7 @@ from repository.conversation_repository import (
     create_conversation,
     update_conversation,
 )
-from core.dependencies import get_db
+from core.dependencies import get_db, get_current_paid_user
 
 logger = logging.getLogger(__name__)
 router = APIRouter(tags=["Analysis"])
@@ -101,6 +102,7 @@ async def analysis_stream_and_save(db: Session, conversation_id: UUID, prompt_pa
 @router.post("/analysis/stream")
 async def stream_message_analysis(
     request: AnalysisRequest,
+    current_user: User = Depends(get_current_paid_user),
     db: Session = Depends(get_db)
 ):
     """
@@ -117,6 +119,7 @@ async def stream_message_analysis(
         HTTPException: 404 if conversation or prompt file not found
     """
     try:
+        _ = current_user
         # Validate conversation_id is a valid UUID
         try:
             conversation_uuid = UUID(request.conversation_id)

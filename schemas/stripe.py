@@ -13,6 +13,13 @@ class StripeCheckoutRequest(BaseModel):
     cancel_url: str | None = None
 
 
+class StripeCheckoutResponse(BaseModel):
+    """Resposta de checkout hospedado Stripe."""
+    price_id: str
+    checkout_url: str
+    session_id: str
+
+
 class StripeSubscriptionResponse(BaseModel):
     """Schema para resposta de assinatura"""
 
@@ -28,6 +35,24 @@ class StripeWebhookEvent(BaseModel):
     id: str
     type: str
     created: datetime
+
+
+class StripeSubscriptionStatusResponse(BaseModel):
+    """Estado consolidado de assinatura do usuario."""
+
+    subscription_plan: str
+    subscription_status: str
+    trial_end_date: datetime | None = None
+    subscription_start_date: datetime | None = None
+    subscription_end_date: datetime | None = None
+    stripe_customer_id: str | None = None
+    stripe_subscription_id: str | None = None
+
+
+class StripeUpdateSubscriptionRequest(BaseModel):
+    """Atualiza o plano da assinatura existente."""
+
+    plan: str = Field(..., description="Plano interno: basic, premium ou enterprise")
 
 
 class StripeCustomerCreate(BaseModel):
@@ -46,3 +71,18 @@ class StripePaymentMethod(BaseModel):
     brand: str
     exp_month: int
     exp_year: int
+
+
+class StripeInvoiceResponse(BaseModel):
+    """Item de historico de faturas."""
+
+    stripe_invoice_id: str
+    status: str
+    amount_due: int | None = None
+    amount_paid: int | None = None
+    currency: str | None = None
+    period_start: datetime | None = None
+    period_end: datetime | None = None
+    hosted_invoice_url: str | None = None
+    invoice_pdf: str | None = None
+    paid_at: datetime | None = None

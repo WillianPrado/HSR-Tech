@@ -7,6 +7,17 @@ from models.user import User, UserStatusEnum, SubscriptionPlanEnum
 from schemas.user import UserCreate
 from core.auth import get_password_hash, verify_password
 
+
+def get_user_by_id(db: Session, user_id: int) -> User | None:
+    """Obtém um usuário pelo id."""
+    try:
+        return db.query(User).filter(User.id == user_id).first()
+    except SQLAlchemyError as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Database error while fetching user by id"
+        ) from e
+
 def get_user_by_email(db: Session, email: str) -> User | None:
     """Obtém um usuário pelo email."""
     try:
@@ -107,10 +118,10 @@ def authenticate_user(db: Session, email: str, password: str) -> User:
     
     return user
 
-async def update_user(db: Session, user_id: int, update_data: dict) -> User:
+def update_user(db: Session, user_id: int, update_data: dict) -> User:
     """Atualiza os dados do usuário."""
     try:
-        user = db.query(User).filter(User.id == user_id).first()
+        user = get_user_by_id(db, user_id)
         if not user:
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,

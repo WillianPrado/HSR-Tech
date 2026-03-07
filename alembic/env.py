@@ -7,6 +7,8 @@ from core.config import settings
 from models.user import Base as UserBase
 from models import conversation
 from models import message
+from models import payment_event
+from models import invoice
 
 config = context.config
 

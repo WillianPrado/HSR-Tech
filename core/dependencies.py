@@ -1,4 +1,5 @@
 # dependencies.py
+from datetime import UTC, datetime
 from typing import AsyncGenerator
 from fastapi import Depends, HTTPException, status
 from fastapi.security import OAuth2PasswordBearer
@@ -59,3 +60,39 @@ def get_current_active_user(current_user: User = Depends(get_current_user)) -> U
     if not current_user.is_active:
         raise HTTPException(status_code=400, detail="Inactive user")
     return current_user
+
+
+def _is_subscription_active(user: User) -> bool:
+    status_value = getattr(user.subscription_status, "value", user.subscription_status)
+    if status_value != "active":
+        return False
+
+    if user.subscription_end_date is None:
+        return True
+
+    end_date = user.subscription_end_date
+    if end_date.tzinfo is None:
+        end_date = end_date.replace(tzinfo=UTC)
+
+    return datetime.now(UTC) <= end_date
+
+
+def _is_trial_active(user: User) -> bool:
+    if user.trial_end_date is None:
+        return False
+
+    trial_end = user.trial_end_date
+    if trial_end.tzinfo is None:
+        trial_end = trial_end.replace(tzinfo=UTC)
+
+    return datetime.now(UTC) <= trial_end
+
+
+def get_current_paid_user(current_user: User = Depends(get_current_active_user)) -> User:
+    if _is_subscription_active(current_user) or _is_trial_active(current_user):
+        return current_user
+
+    raise HTTPException(
+        status_code=status.HTTP_402_PAYMENT_REQUIRED,
+        detail="Active subscription or valid trial is required",
+    )
