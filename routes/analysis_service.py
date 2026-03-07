@@ -23,7 +23,13 @@ from repository.conversation_repository import (
     create_conversation,
     update_conversation,
 )
-from core.dependencies import get_db, get_current_paid_user
+from core.dependencies import (
+    consume_analysis_credit,
+    enforce_analysis_access,
+    get_current_active_user,
+    get_current_paid_user,
+    get_db,
+)
 
 logger = logging.getLogger(__name__)
 router = APIRouter(tags=["Analysis"])
@@ -57,7 +63,7 @@ class ContinueConversationRequest(BaseModel):
     audio_path: str | None = None
 
 
-async def analysis_stream_and_save(db: Session, conversation_id: UUID, prompt_path: Path):
+async def analysis_stream_and_save(db: Session, conversation_id: UUID, prompt_path: Path, current_user: User):
     """Stream analysis text progressively and save final assistant message."""
     try:
         ai_response = ""
@@ -90,6 +96,9 @@ async def analysis_stream_and_save(db: Session, conversation_id: UUID, prompt_pa
             role="assistant",
             content=ai_response
         )
+
+        # Consume one credit only when analysis finished successfully.
+        consume_analysis_credit(db, current_user.id)
         
     except RuntimeError as e:
         logger.error(f"Streaming analysis runtime error: {e}")
@@ -119,7 +128,6 @@ async def stream_message_analysis(
         HTTPException: 404 if conversation or prompt file not found
     """
     try:
-        _ = current_user
         # Validate conversation_id is a valid UUID
         try:
             conversation_uuid = UUID(request.conversation_id)
@@ -135,9 +143,12 @@ async def stream_message_analysis(
         prompt_file = Path(request.prompt_path)
         if not prompt_file.exists():
             raise HTTPException(status_code=404, detail=f"Prompt file not found: {request.prompt_path}")
+
+        # Validate access before starting stream. Credit is consumed only on success.
+        _ = enforce_analysis_access(current_user)
         
         return StreamingResponse(
-            analysis_stream_and_save(db, conversation_uuid, prompt_file),
+            analysis_stream_and_save(db, conversation_uuid, prompt_file, current_user),
             media_type="text/event-stream",
             headers={
                 "Cache-Control": "no-cache",
@@ -234,13 +245,16 @@ def load_file_sync(path: Path) -> Optional[str]:
 @router.post("/conversations/continue")
 async def continue_conversation(
     request: ContinueConversationRequest,
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_active_user),
 ):
     """
     Continue an existing conversation by adding a new user message and optional transcript/audio.
     Streams the AI response letter-by-letter for real-time frontend updates.
     """
     try:
+        _ = enforce_analysis_access(current_user)
+
         # Validate conversation_id
         try:
             conversation_uuid = UUID(request.conversation_id)
@@ -289,6 +303,7 @@ async def continue_conversation(
                 role="assistant",
                 content=ai_response
             )
+            consume_analysis_credit(db, current_user.id)
 
         return StreamingResponse(
             ai_stream_and_save(),

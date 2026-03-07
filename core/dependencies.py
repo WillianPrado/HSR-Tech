@@ -4,6 +4,7 @@ from typing import AsyncGenerator
 from fastapi import Depends, HTTPException, status
 from fastapi.security import OAuth2PasswordBearer
 from sqlalchemy.orm import Session
+from sqlalchemy.exc import SQLAlchemyError
 from core.http.async_http_client import AsyncHTTPClient
 from services.db_handler import get_db
 from core.auth import verify_token
@@ -89,10 +90,95 @@ def _is_trial_active(user: User) -> bool:
 
 
 def get_current_paid_user(current_user: User = Depends(get_current_active_user)) -> User:
-    if _is_subscription_active(current_user) or _is_trial_active(current_user):
+    is_overdue = _is_subscription_payment_overdue(current_user)
+    has_free_credit = _has_free_analysis_credit(current_user)
+    if not has_free_credit and current_user.stripe_customer_id is None:
+        raise HTTPException(
+            status_code=status.HTTP_402_PAYMENT_REQUIRED,
+            detail="Credito esgotado. Realize o pagamento ou cadastre sua conta na Stripe.",
+        )
+    if not is_overdue and not is_overdue:
+        raise HTTPException(
+            status_code=status.HTTP_402_PAYMENT_REQUIRED,
+            detail="Pagamento em atraso. Regularize sua assinatura para continuar.",
+        )
+
+    
+    raise HTTPException(
+        status_code=status.HTTP_402_PAYMENT_REQUIRED,
+        detail="Credito esgotado. Realize o pagamento ou cadastre sua conta na Stripe.",
+    )
+
+
+def _has_free_analysis_credit(user: User) -> bool:
+    return int(getattr(user, "free_analyses_remaining", 0) or 0) > 0
+
+
+def _is_subscription_payment_overdue(user: User) -> bool:
+    status_value = getattr(user.subscription_status, "value", user.subscription_status)
+    has_subscription = bool(getattr(user, "stripe_subscription_id", None))
+    return has_subscription and status_value in {"suspended", "inactive", "cancelled"}
+
+
+def enforce_analysis_access(current_user: User) -> User:
+    """Validate if the user can request a new analysis without consuming credits yet."""
+    if _is_subscription_payment_overdue(current_user):
+        raise HTTPException(
+            status_code=status.HTTP_402_PAYMENT_REQUIRED,
+            detail="Pagamento em atraso. Regularize sua assinatura para continuar.",
+        )
+
+    if _has_free_analysis_credit(current_user):
         return current_user
+
+    if _is_subscription_active(current_user):
+        raise HTTPException(
+            status_code=status.HTTP_402_PAYMENT_REQUIRED,
+            detail="Suas analises acabaram. Compre mais analises para continuar.",
+        )
+
+    if _is_trial_active(current_user):
+        raise HTTPException(
+            status_code=status.HTTP_402_PAYMENT_REQUIRED,
+            detail="Seu limite de analises acabou. Assine um plano ou compre mais analises.",
+        )
+
+    has_any_stripe_account = bool(getattr(current_user, "stripe_customer_id", None))
+    if not has_any_stripe_account:
+        raise HTTPException(
+            status_code=status.HTTP_402_PAYMENT_REQUIRED,
+            detail="Suas analises gratis acabaram. Cadastre sua conta na Stripe para continuar.",
+        )
 
     raise HTTPException(
         status_code=status.HTTP_402_PAYMENT_REQUIRED,
-        detail="Active subscription or valid trial is required",
+        detail="Suas analises gratis acabaram. Realize o pagamento para continuar.",
     )
+
+
+def consume_analysis_credit(db: Session, user_id: int) -> User:
+    """Consume one analysis credit after a successful analysis completion."""
+    user = db.query(User).filter(User.id == user_id).first()
+    if user is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="User not found",
+        )
+
+    if not _has_free_analysis_credit(user):
+        raise HTTPException(
+            status_code=status.HTTP_402_PAYMENT_REQUIRED,
+            detail="Suas analises acabaram. Compre mais analises para continuar.",
+        )
+
+    try:
+        user.free_analyses_remaining = user.free_analyses_remaining - 1
+        db.commit()
+        db.refresh(user)
+        return user
+    except SQLAlchemyError as exc:
+        db.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to consume free analysis credit",
+        ) from exc

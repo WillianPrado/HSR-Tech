@@ -4,7 +4,7 @@ from fastapi import APIRouter, Depends, HTTPException, UploadFile, BackgroundTas
 from uuid import UUID, uuid4
 from mysqlx import Session
 #from core.dependencies import get_current_user
-from core.dependencies import get_current_user
+from core.dependencies import get_current_paid_user, get_current_user
 from core.status_tracker import set_status
 from models.user import User
 from repository.conversation_repository import create_conversation
@@ -18,7 +18,7 @@ logger = logging.getLogger(__name__)
 async def upload_sales_zip(
     file: UploadFile,
     background_tasks: BackgroundTasks,
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(get_current_paid_user),
     db: Session = Depends(get_db)
 ):
     """

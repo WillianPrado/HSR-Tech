@@ -6,7 +6,7 @@ from typing import Any
 from fastapi import APIRouter, Depends, HTTPException, Request
 from sqlalchemy.orm import Session
 
-from core.config import stripe_price_id_by_plan
+from core.config import analysis_credits_by_plan, stripe_price_id_by_plan
 from models.user import SubscriptionPlanEnum, UserStatusEnum
 from repository.payment_repository import create_payment_event, upsert_invoice
 from repository.user_repository import (
@@ -89,6 +89,25 @@ def _sync_subscription_to_user(db: Session, user_id: int, subscription: dict[str
             "subscription_end_date": _to_datetime(subscription.get("current_period_end")),
         },
     )
+
+
+def _grant_plan_analysis_credits(db: Session, user, plan: SubscriptionPlanEnum) -> None:
+    credits_to_add = analysis_credits_by_plan(getattr(plan, "value", str(plan)))
+    if credits_to_add <= 0:
+        return
+
+    current_credits = int(getattr(user, "free_analyses_remaining", 0) or 0)
+    user.free_analyses_remaining = current_credits + credits_to_add
+    db.commit()
+    db.refresh(user)
+
+
+def _plan_from_invoice(data_object: dict[str, Any], fallback_plan: SubscriptionPlanEnum) -> SubscriptionPlanEnum:
+    lines = data_object.get("lines", {}).get("data", [])
+    first_line = lines[0] if lines else {}
+    price = first_line.get("price") if first_line else {}
+    price_id = (price or {}).get("id") if isinstance(price, dict) else None
+    return _plan_from_price_id(price_id) if price_id else fallback_plan
 
 
 def _extract_user_id(metadata: dict[str, Any] | None) -> int | None:
@@ -196,5 +215,10 @@ async def stripe_webhook(request: Request, db: Session = Depends(get_db)):
                     else UserStatusEnum.suspended,
                 },
             )
+
+            if event_type == "invoice.payment_succeeded":
+                fallback_plan = getattr(user, "subscription_plan", SubscriptionPlanEnum.basic)
+                invoice_plan = _plan_from_invoice(data_object, fallback_plan)
+                _grant_plan_analysis_credits(db, user, invoice_plan)
 
     return {"ok": True}

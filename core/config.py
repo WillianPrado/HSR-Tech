@@ -30,6 +30,9 @@ class Settings(BaseSettings):
     TRANSCRIPTION_RETRY_ATTEMPTS: int = 5
     TRANSCRIPTION_RETRY_MIN_WAIT_SECONDS: int = 2
     TRANSCRIPTION_RETRY_MAX_WAIT_SECONDS: int = 30
+    ANALYSIS_CREDITS_BASIC: int = 10
+    ANALYSIS_CREDITS_PREMIUM: int = 30
+    ANALYSIS_CREDITS_ENTERPRISE: int = 100
    
    
     model_config = SettingsConfigDict(
@@ -77,6 +80,16 @@ def stripe_price_id_by_plan(plan_name: str) -> str | None:
     }
     price_id = normalize_price_id(plan_map.get(plan_name))
     return None if _is_placeholder(price_id or "") else price_id
+
+
+def analysis_credits_by_plan(plan_name: str) -> int:
+    normalized = (plan_name or "").strip().lower()
+    plan_credits = {
+        "basic": settings.ANALYSIS_CREDITS_BASIC,
+        "premium": settings.ANALYSIS_CREDITS_PREMIUM,
+        "enterprise": settings.ANALYSIS_CREDITS_ENTERPRISE,
+    }
+    return max(0, int(plan_credits.get(normalized, 0) or 0))
 
 
 def should_enforce_stripe_strict_config() -> bool:

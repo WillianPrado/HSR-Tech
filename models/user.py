@@ -37,6 +37,7 @@ class User(Base):
     stripe_subscription_id = Column(String(100), nullable=True, unique=True)
     is_active = Column(Boolean, default=True)
     trial_end_date = Column(DateTime, nullable=True)
+    free_analyses_remaining = Column(Integer, nullable=False, default=2)
     
     def is_subscription_active(self):
         if self.subscription_status == UserStatusEnum.active:
