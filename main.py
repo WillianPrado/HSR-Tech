@@ -89,7 +89,7 @@ app = FastAPI(
         "🚀 **Features:**\n"
         "- 📁 Upload ZIP files with chats and audios\n"
         "- 🎙️ Automatic transcription via OpenAI\n"
-        "- 📊 PDF report generation with insights\n"
+        "- 📊 Structured analysis data for frontend rendering\n"
         "- 🔍 Real-time processing status tracking\n"
         "- 🔐 JWT Authentication & Security\n"
         "- 📈 Performance monitoring\n\n"
@@ -257,7 +257,7 @@ async def api_info():
         "features": [
             "ZIP file upload with chat and audio processing",
             "OpenAI-powered transcription",
-            "PDF report generation",
+            "Frontend-rendered report",
             "Real-time status tracking",
             "JWT authentication"
         ],

@@ -1,8 +1,5 @@
 import logging
 from fastapi import APIRouter, Depends, HTTPException
-from pathlib import Path
-
-from fastapi.responses import FileResponse
 from core.dependencies import get_current_paid_user
 from models.user import User
 
@@ -16,18 +13,11 @@ async def get_pdf_report(
     current_user: User = Depends(get_current_paid_user),
 ):
     """
-    Retorna o PDF de análise gerado para o ZIP enviado.
+    Endpoint descontinuado: o PDF agora e gerado no frontend.
     """
-    _ = current_user
-    filename = conversation_id.replace(".zip", "")
-    
-    output_pdf = Path(f"storage/output/analise_{filename}.pdf") 
-    if not output_pdf.exists():
-        raise HTTPException(status_code=404, detail="Relatório não encontrado")
-
-    return FileResponse(
-        output_pdf,
-        media_type="application/pdf",
-        filename=output_pdf.name
+    _ = (current_user, conversation_id)
+    raise HTTPException(
+        status_code=410,
+        detail="Geracao e download de PDF foram removidos do backend. O frontend deve renderizar o relatorio.",
     )
 

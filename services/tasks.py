@@ -30,7 +30,6 @@ from repository.conversation_repository import create_conversation, update_conve
 from services.zip.zip_extractor import AsyncZipExtractor
 from services.chat.chat_file_handler import ChatProcessor
 from services.audio.openai_transcriber import OpenAITranscriber
-from services.reports.coach_analyzer import create_analysis_prompt, process_conversation_to_pdf
 from core.config import settings
 from utils.find_chat_file import create_chat_finder, ChatFileFinder
 from utils.file_cleaner import clean_extracted_files
@@ -87,7 +86,7 @@ class ZipProcessingPipeline:
         1. Extraction
         2. Chat detection and parsing
         3. Audio transcription
-        4. PDF report generation
+        4. Conversation persistence
         5. Cleanup
     """
 
@@ -148,8 +147,6 @@ class ZipProcessingPipeline:
         transcriptions = await self._process_audios(audio_dict, conversation_id)
         await chat_processor.update_chat_file(chat_file, transcriptions)
         conversation = await read_file_async(chat_file)
-       # await self._generate_report(chat_file, output_dir, conversation_id)
-
         conversation_uuid = UUID(conversation_id)
         updated = update_conversation(
             db=db,
@@ -270,34 +267,12 @@ class ZipProcessingPipeline:
             raise
 
     # -----------------------------------------------------------------
-    async def _generate_report(self, chat_file: Path, output_dir: Path, zip_id: str):
-        """Generates a PDF report using the processed chat file."""
-        await self.tracker.update(zip_id, "Gerando relatório", 0.6)
-        output_dir.mkdir(parents=True, exist_ok=True)
-
-        prompt_path = (
-            Path(__file__).parent.parent / "prompts" / "coach_prompt_corretor_imoveis.txt"
-        )
-        filename = zip_id.replace(".zip", "")
-        output_pdf = output_dir / f"analise_{filename}.pdf"
-
-        
-
-        await self.tracker.update(zip_id, "Excluindo conversa", 0.8)
-        await self._cleanup_files()
-        create_conversation(
-            user_id=1,  # Placeholder: replace with actual user ID from context
-            title=f"Análise {filename}",
-            audio_path=str(chat_file),
-        )
-
-    # -----------------------------------------------------------------
     async def _cleanup_files(self):
-        """Deletes temporary extracted files while preserving reports."""
+        """Deletes temporary extracted files while preserving text outputs."""
         await asyncio.to_thread(
             clean_extracted_files,
             base_dir=Path("storage"),
-            keep_extensions=[".txt", ".pdf"],
+            keep_extensions=[".txt"],
             delete_zips=True,
         )
 
