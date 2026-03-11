@@ -26,13 +26,13 @@ from scripts.db.ensure_sales_db import ensure_sales_db
 
 # Import routers
 from routes import (
+    conversation,
+    payment,
+    report,
     sales_upload,
-    report_service,
-    status_service,
+    status,
     auth,
     analysis_service,
-    conversation_service,
-    payment_service,
     stripe_webhook,
 )
 
@@ -274,12 +274,12 @@ async def api_info():
 
 # All routers grouped under /api/v1 for versioning clarity
 app.include_router(sales_upload.router, prefix="/api/v1", tags=["Uploads"])
-app.include_router(report_service.router, prefix="/api/v1", tags=["Reports"])
-app.include_router(status_service.router, prefix="/api/v1", tags=["Status"])
+app.include_router(report.router, prefix="/api/v1", tags=["Reports"])
+app.include_router(status.router, prefix="/api/v1", tags=["Status"])
 app.include_router(auth.router, prefix="/api/v1", tags=["Authentication"])
 app.include_router(analysis_service.router, prefix="/api/v1", tags=["Analysis"])
-app.include_router(conversation_service.router, prefix="/api/v1", tags=["Conversations"])
-app.include_router(payment_service.router, prefix="/api/v1", tags=["Payment"])
+app.include_router(conversation.router, prefix="/api/v1", tags=["Conversations"])
+app.include_router(payment.router, prefix="/api/v1", tags=["Payment"])
 app.include_router(stripe_webhook.router, prefix="/api/v1", tags=["Payment"])
 
 # ==============================================================
