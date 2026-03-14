@@ -70,7 +70,7 @@ def create_user(db: Session, user_data: UserCreate) -> User:
             subscription_status=UserStatusEnum.inactive,  # Inicia como inativo
             created_at=datetime.now(UTC),
             is_active=True,
-            free_analyses_remaining=2,
+            analyses_remaining=2,
             # Campos de assinatura serão preenchidos após o checkout no Stripe
             stripe_customer_id=None,
             stripe_subscription_id=None,

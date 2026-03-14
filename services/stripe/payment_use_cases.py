@@ -422,11 +422,10 @@ class PaymentUseCases:
         )
 
     def _grant_plan_analysis_credits(self, user: User, plan: SubscriptionPlanEnum) -> None:
-        credits_to_add = analysis_credits_by_plan(getattr(plan, "value", str(plan)))
-        if credits_to_add <= 0:
+        credits = analysis_credits_by_plan(getattr(plan, "value", str(plan)))
+        if credits <= 0:
             return
-        current = int(getattr(user, "free_analyses_remaining", 0) or 0)
-        user.free_analyses_remaining = current + credits_to_add
+        user.analyses_remaining = credits
         self.db.commit()
         self.db.refresh(user)
 

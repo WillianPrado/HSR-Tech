@@ -47,7 +47,7 @@ class UserResponse(BaseModel):
     whatsapp: str | None
     subscription_plan: str
     subscription_status: str
-    free_analyses_remaining: int = 0
+    analyses_remaining: int = 0
     stripe_customer_id: str | None = None
     payment_methods: list[StripePaymentMethod] = []
 

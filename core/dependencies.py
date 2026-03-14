@@ -90,14 +90,13 @@ def _is_trial_active(user: User) -> bool:
 
 
 def get_current_paid_user(current_user: User = Depends(get_current_active_user)) -> User:
-    is_overdue = _is_subscription_payment_overdue(current_user)
-    has_free_credit = _has_free_analysis_credit(current_user)
-    if not has_free_credit and current_user.stripe_customer_id is None:
+    has_analyses = current_user.analyses_remaining > 0
+    if not has_analyses and current_user.stripe_customer_id is None:
         raise HTTPException(
             status_code=status.HTTP_402_PAYMENT_REQUIRED,
             detail="Credito esgotado. Realize o pagamento ou cadastre sua conta na Stripe.",
         )
-    if not is_overdue and current_user.stripe_customer_id is None:
+    if has_analyses and current_user.stripe_customer_id  is not None:
         raise HTTPException(
             status_code=status.HTTP_402_PAYMENT_REQUIRED,
             detail="Pagamento em atraso. Regularize sua assinatura para continuar.",
@@ -108,7 +107,7 @@ def get_current_paid_user(current_user: User = Depends(get_current_active_user))
 
 
 def _has_free_analysis_credit(user: User) -> bool:
-    return int(getattr(user, "free_analyses_remaining", 0) or 0) > 0
+    return int(getattr(user, "analyses_remaining", 0) or 0) > 0
 
 
 def _is_subscription_payment_overdue(user: User) -> bool:
@@ -169,7 +168,7 @@ def consume_analysis_credit(db: Session, user_id: int) -> User:
         )
 
     try:
-        user.free_analyses_remaining = user.free_analyses_remaining - 1
+        user.analyses_remaining = user.analyses_remaining - 1
         db.commit()
         db.refresh(user)
         return user
