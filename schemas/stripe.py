@@ -8,7 +8,7 @@ from pydantic import BaseModel, EmailStr, Field
 class StripeCheckoutRequest(BaseModel):
     """Schema para requisição de criação de checkout session"""
 
-    price_id: str = Field(..., description="ID do preço no Stripe (ex: price_123)")
+    plan: str = Field(..., description="Plano interno: basic, premium ou enterprise")
     success_url: str | None = None
     cancel_url: str | None = None
 

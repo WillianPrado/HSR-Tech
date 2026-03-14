@@ -15,8 +15,8 @@ class Settings(BaseSettings):
     STRIPE_MEDIUM_PRICE_ID: str = ""
     STRIPE_PRO_PRICE_ID: str = ""
     STRIPE_PUBLIC_KEY: str = ""
-    PAYMENT_SUCCESS_URL: str = "http://localhost:3000/billing/success"
-    PAYMENT_CANCEL_URL: str = "http://localhost:3000/billing/cancel"
+    PAYMENT_SUCCESS_URL: str = "http://localhost:4200/billing/success"
+    PAYMENT_CANCEL_URL: str = "http://localhost:4200/billing/cancel"
     APP_ENV: str = "development"
     
     DATABASE_URL: str = "sqlite:///./sales.db"

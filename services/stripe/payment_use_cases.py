@@ -8,7 +8,6 @@ from sqlalchemy.orm import Session
 
 from core.config import (
     analysis_credits_by_plan,
-    normalize_price_id,
     settings,
     stripe_price_id_by_plan,
     validate_stripe_runtime_config,
@@ -78,13 +77,6 @@ def _plan_from_price_id(price_id: str | None) -> SubscriptionPlanEnum:
     """Returns `basic` as fallback when price_id is unknown."""
     return _build_price_plan_map().get(price_id or "", SubscriptionPlanEnum.basic)
 
-
-def _plan_from_price_id_strict(price_id: str) -> SubscriptionPlanEnum:
-    """Raises 400 when price_id is not mapped to any configured plan."""
-    plan = _build_price_plan_map().get(normalize_price_id(price_id))
-    if plan is None:
-        raise HTTPException(status_code=400, detail="Price ID is not allowed")
-    return plan
 
 
 def _price_id_for_plan(plan_name: str) -> str:
@@ -165,8 +157,11 @@ class PaymentUseCases:
                 detail="User already has an active subscription",
             )
 
-        request_price_id = normalize_price_id(request.price_id)
-        chosen_plan = _plan_from_price_id_strict(request_price_id)
+        plan_name = request.plan.lower().strip()
+        if plan_name not in {"basic", "premium", "enterprise"}:
+            raise HTTPException(status_code=400, detail="Invalid plan. Use: basic, premium or enterprise")
+        chosen_plan = SubscriptionPlanEnum(plan_name)
+        request_price_id = _price_id_for_plan(plan_name)
 
         customer_id = user.stripe_customer_id
         if not customer_id:

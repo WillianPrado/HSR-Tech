@@ -96,7 +96,7 @@ def get_current_paid_user(current_user: User = Depends(get_current_active_user))
             status_code=status.HTTP_402_PAYMENT_REQUIRED,
             detail="Credito esgotado. Realize o pagamento ou cadastre sua conta na Stripe.",
         )
-    if has_analyses and current_user.stripe_customer_id  is not None:
+    if not has_analyses and current_user.stripe_customer_id  is not None:
         raise HTTPException(
             status_code=status.HTTP_402_PAYMENT_REQUIRED,
             detail="Pagamento em atraso. Regularize sua assinatura para continuar.",

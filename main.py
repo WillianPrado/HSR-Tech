@@ -30,7 +30,7 @@ from routes import (
     payment,
     report,
     sales_upload,
-    status,
+    status as status_router,
     auth,
     analysis_service,
     stripe_webhook,
@@ -275,7 +275,7 @@ async def api_info():
 # All routers grouped under /api/v1 for versioning clarity
 app.include_router(sales_upload.router, prefix="/api/v1", tags=["Uploads"])
 app.include_router(report.router, prefix="/api/v1", tags=["Reports"])
-app.include_router(status.router, prefix="/api/v1", tags=["Status"])
+app.include_router(status_router.router, prefix="/api/v1", tags=["Status"])
 app.include_router(auth.router, prefix="/api/v1", tags=["Authentication"])
 app.include_router(analysis_service.router, prefix="/api/v1", tags=["Analysis"])
 app.include_router(conversation.router, prefix="/api/v1", tags=["Conversations"])
