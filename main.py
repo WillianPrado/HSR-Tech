@@ -61,16 +61,25 @@ async def lifespan(app: FastAPI):
     # Startup - usando texto simples para evitar problemas de Unicode
     logging.info("Starting AI Chat & Sales Analyzer API...")
     logging.info("Initializing services...")
-    db_created = ensure_sales_db()
-    if db_created:
-        logging.info("sales.db created")
-    else:
-        logging.info("sales.db already exists")
-    init_db()
-    logging.info("Database initialized")
-    
+
+    try:
+        db_created = ensure_sales_db()
+        if db_created:
+            logging.info("sales.db created")
+        else:
+            logging.info("sales.db already exists")
+    except Exception as e:
+        logging.error(f"Error ensuring sales.db: {e}")
+
+    try:
+        init_db()
+        logging.info("Database initialized")
+    except Exception as e:
+        logging.error(f"Error initializing database: {e}")
+        logging.info("Continuing startup despite database initialization error")
+
     yield
-    
+
     # Shutdown
     logging.info("Shutting down AI Chat & Sales Analyzer API...")
     logging.info("Cleaning up resources...")
