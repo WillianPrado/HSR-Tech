@@ -6,7 +6,7 @@ from fastapi import UploadFile
 
 async def process_audio(file: UploadFile) -> dict:
     temp_dir = Path("temp_audios")
-    temp_dir.mkdir(exist_ok=True)
+    temp_dir.mkdir(exist_ok=True) 
     
     file_path = temp_dir / f"teste{datetime.now().timestamp()}.opus"
     with open(file_path, "wb") as buffer:
